@@ -1,5 +1,6 @@
 [project]
 name = "wikidata-rdf-patch"
+version = "0.1.0"
 readme = "README.md"
 authors = [{name = "Joshua Peek"}]
 requires-python = ">=3.10"
