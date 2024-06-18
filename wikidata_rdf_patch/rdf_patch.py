@@ -6,13 +6,13 @@ from collections.abc import Iterator
 from functools import cache
 from typing import Any, TextIO, cast
 
+import click
 import pywikibot  # type: ignore
 import pywikibot.config  # type: ignore
 import requests
 from rdflib import XSD, Graph
 from rdflib.namespace import Namespace, NamespaceManager
 from rdflib.term import BNode, Literal, URIRef
-from tqdm import tqdm
 
 SITE = pywikibot.Site("wikidata", "wikidata")
 
@@ -621,4 +621,4 @@ def blocklist() -> set[str]:
 
 
 def print_warning(title: str, message: str) -> None:
-    tqdm.write(f"::warning title={title}::{message}", file=sys.stderr)
+    click.echo(f"::warning title={title}::{message}", file=sys.stderr)
