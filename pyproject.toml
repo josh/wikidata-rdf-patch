@@ -1,0 +1,26 @@
+[project]
+name = "wikidata-rdf-patch"
+readme = "README.md"
+authors = [{name = "Joshua Peek"}]
+requires-python = ">=3.10"
+dependencies = [
+    "pywikibot>=9.0.0,<10.0",
+    "rdflib>=7.0.0,<8.0",
+    "requests>=2.0.0,<3.0",
+]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+]
+
+[project.optional-dependencies]
+test = [
+    "mypy>=1.0.0,<2.0",
+    "pytest>=8.0.0,<9.0",
+    "ruff>=0.4.0",
+]
+
+[tool.ruff.lint]
+extend-select = ["I", "UP"]
+
+[tool.mypy]
+strict = true
