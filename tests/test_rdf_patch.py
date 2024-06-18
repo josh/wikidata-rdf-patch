@@ -1,8 +1,8 @@
 from io import StringIO
 from typing import Any
 
-import rdf_patch
-from rdf_patch import process_graph
+import wikidata_rdf_patch.rdf_patch as rdf_patch
+from wikidata_rdf_patch.rdf_patch import process_graph
 
 username = "Test"
 

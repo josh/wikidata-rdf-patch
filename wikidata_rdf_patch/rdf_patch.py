@@ -1,5 +1,4 @@
 import datetime
-import os
 import re
 import sys
 from collections import OrderedDict, defaultdict
@@ -623,37 +622,3 @@ def blocklist() -> set[str]:
 
 def print_warning(title: str, message: str) -> None:
     tqdm.write(f"::warning title={title}::{message}", file=sys.stderr)
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Process Wikidata RDF changes.")
-    parser.add_argument("-n", "--dry-run", action="store_true")
-    args = parser.parse_args()
-
-    username = os.environ["WIKIDATA_USERNAME"]
-    password = os.environ["WIKIDATA_PASSWORD"]
-
-    if not args.dry_run:
-        pywikibot.config.password_file = "user-password.py"
-        with open(pywikibot.config.password_file, "w") as file:
-            file.write(f'("{username}", "{password}")')
-        os.chmod(pywikibot.config.password_file, 0o600)
-
-        pywikibot.config.usernames["wikidata"]["wikidata"] = username
-
-        SITE.login()
-
-    blocked_qids = blocklist()
-
-    edits = process_graph(
-        username=username,
-        input=sys.stdin,
-        blocked_qids=blocked_qids,
-    )
-
-    for item, claims, summary in edits:
-        if args.dry_run:
-            continue
-        item.editEntity({"claims": claims}, summary=summary)
