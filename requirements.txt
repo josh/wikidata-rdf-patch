@@ -38,7 +38,15 @@ ruff==0.4.9
     # via wikidata-rdf-patch (pyproject.toml)
 six==1.16.0
     # via isodate
+tqdm==4.66.4
+    # via wikidata-rdf-patch (pyproject.toml)
+types-requests==2.32.0.20240602
+    # via wikidata-rdf-patch (pyproject.toml)
+types-tqdm==4.66.0.20240417
+    # via wikidata-rdf-patch (pyproject.toml)
 typing-extensions==4.12.2
     # via mypy
 urllib3==2.2.2
-    # via requests
+    # via
+    #   requests
+    #   types-requests
