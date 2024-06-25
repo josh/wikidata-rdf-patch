@@ -602,21 +602,24 @@ def process_graph(
         yield (item, claims_json, summary)
 
 
-@cache
-def blocklist() -> set[str]:
+def fetch_page_qids(title: str) -> set[str]:
+    assert not title.startswith("http"), "Expected title, not URL"
     r = requests.get(
         url="https://www.wikidata.org/w/api.php",
         params={
             "action": "query",
             "format": "json",
-            "pageids": "103442925",
+            "titles": title,
             "prop": "extracts",
             "explaintext": "1",
         },
     )
     r.raise_for_status()
     data = r.json()
-    text = data["query"]["pages"]["103442925"]["extract"]
+    pages = data["query"]["pages"]
+    assert len(pages) == 1, "Expected one page"
+    page = next(iter(pages.values()))
+    text = page["extract"]
     return set(re.findall(r"Q[0-9]+", text))
 
 

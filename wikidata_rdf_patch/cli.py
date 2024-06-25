@@ -5,7 +5,7 @@ import click
 import pywikibot  # type: ignore
 import pywikibot.config  # type: ignore
 
-from .rdf_patch import SITE, blocklist, process_graph
+from .rdf_patch import SITE, fetch_page_qids, process_graph
 
 
 @click.command()
@@ -28,8 +28,20 @@ from .rdf_patch import SITE, blocklist, process_graph
     default="-",
     help="Input RDF file",
 )
+@click.option(
+    "--blocklist-url",
+    envvar="WIKIDATA_BLOCKLIST_URL",
+    default="https://www.wikidata.org/wiki/User:Josh404Bot/Blocklist",  # TODO: Default to empty string
+    help="Wikidata blocklist page URL",
+)
 @click.version_option()
-def main(input: TextIO, username: str, password: str, dry_run: bool) -> None:
+def main(
+    input: TextIO,
+    username: str,
+    password: str,
+    dry_run: bool,
+    blocklist_url: str,
+) -> None:
     if dry_run is False:
         pywikibot.config.password_file = "user-password.py"
         with open(pywikibot.config.password_file, "w") as file:
@@ -40,7 +52,13 @@ def main(input: TextIO, username: str, password: str, dry_run: bool) -> None:
 
         SITE.login()
 
-    blocked_qids = blocklist()
+    blocked_qids: set[str] = set()
+    if blocklist_url.startswith("https://www.wikidata.org/wiki/"):
+        blocked_qids = fetch_page_qids(
+            title=blocklist_url.removeprefix("https://www.wikidata.org/wiki/")
+        )
+    elif not blocklist_url.startswith("http"):
+        blocked_qids = fetch_page_qids(title=blocklist_url)
 
     edits = process_graph(username=username, input=input, blocked_qids=blocked_qids)
     for item, claims, summary in edits:
