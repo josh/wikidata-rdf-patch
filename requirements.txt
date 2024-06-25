@@ -14,7 +14,7 @@ isodate==0.6.1
     # via rdflib
 mwparserfromhell==0.6.6
     # via pywikibot
-mypy==1.10.0
+mypy==1.10.1
     # via wikidata-rdf-patch (pyproject.toml)
 mypy-extensions==1.0.0
     # via mypy
