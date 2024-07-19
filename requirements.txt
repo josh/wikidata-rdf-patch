@@ -49,7 +49,9 @@ tomli==2.0.1
 types-requests==2.32.0.20240712
     # via wikidata-rdf-patch (pyproject.toml)
 typing-extensions==4.12.2
-    # via mypy
+    # via
+    #   wikidata-rdf-patch (pyproject.toml)
+    #   mypy
 urllib3==2.2.2
     # via
     #   requests
