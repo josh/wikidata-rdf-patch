@@ -1,4 +1,4 @@
-from typing import Any, Literal, TypedDict, Union
+from typing import Literal, TypedDict, Union
 
 from typing_extensions import Required
 
@@ -27,7 +27,7 @@ class SnakValue(TypedDict, total=False):
     property: Required[str]
     hash: str
     datavalue: Required["DataValue"]
-    datatype: Required[Any]
+    datatype: Required["DataType"]
 
 
 # https://josh.github.io/wikidata-api-schemas/snak.schema.json#/$defs/somevalue
@@ -35,7 +35,7 @@ class SnakSomeValue(TypedDict, total=False):
     snaktype: Required[Literal["somevalue"]]
     property: Required[str]
     hash: str
-    datatype: Any
+    datatype: "DataType"
 
 
 # https://josh.github.io/wikidata-api-schemas/snak.schema.json#/$defs/novalue
@@ -43,8 +43,29 @@ class SnakNoValue(TypedDict, total=False):
     snaktype: Required[Literal["novalue"]]
     property: Required[str]
     hash: str
-    datatype: Any
+    datatype: "DataType"
 
+
+# https://josh.github.io/wikidata-api-schemas/property.schema.json#/$defs/datatype
+DataType = Literal[
+    "commonsMedia",
+    "geo-shape",
+    "tabular-data",
+    "url",
+    "external-id",
+    "wikibase-item",
+    "wikibase-property",
+    "globe-coordinate",
+    "monolingualtext",
+    "quantity",
+    "string",
+    "time",
+    "musical-notation",
+    "math",
+    "wikibase-lexeme",
+    "wikibase-form",
+    "wikibase-sense",
+]
 
 # https://josh.github.io/wikidata-api-schemas/data-value.schema.json
 DataValue = Union[
