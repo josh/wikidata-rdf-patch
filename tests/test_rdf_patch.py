@@ -112,11 +112,13 @@ def test_add_prop_qualifer() -> None:
     assert summary is None
     assert len(claims) == 1
     assert claims[0]["mainsnak"]["property"] == "P161"
+    assert claims[0]["qualifiers"]["P4633"][0]["snaktype"] == "value"
     assert claims[0]["qualifiers"]["P4633"][0]["datavalue"]["type"] == "string"
     assert (
         claims[0]["qualifiers"]["P4633"][0]["datavalue"]["value"]
         == 'Ellis Boyd "Red" Redding'
     )
+    assert claims[0]["qualifiers"]["P4633"][1]["snaktype"] == "value"
     assert claims[0]["qualifiers"]["P4633"][1]["datavalue"]["type"] == "string"
     assert claims[0]["qualifiers"]["P4633"][1]["datavalue"]["value"] == "Narrator"
 
@@ -182,6 +184,7 @@ def test_add_item_prop_qualifer() -> None:
     assert claims[0]["mainsnak"]["property"] == "P161"
     assert claims[0]["mainsnak"]["datavalue"]["type"] == "wikibase-entityid"
     assert claims[0]["mainsnak"]["datavalue"]["value"]["numeric-id"] == 48337
+    assert claims[0]["qualifiers"]["P4633"][0]["snaktype"] == "value"
     assert claims[0]["qualifiers"]["P4633"][0]["datavalue"]["value"] == "Narrator"
 
 
@@ -199,6 +202,7 @@ def test_update_item_prop_qualifer_exclusive() -> None:
     assert claims[0]["mainsnak"]["property"] == "P161"
     assert claims[0]["mainsnak"]["datavalue"]["type"] == "wikibase-entityid"
     assert claims[0]["mainsnak"]["datavalue"]["value"]["numeric-id"] == 48337
+    assert claims[0]["qualifiers"]["P4633"][0]["snaktype"] == "value"
     assert claims[0]["qualifiers"]["P4633"][0]["datavalue"]["value"] == "Narrator"
 
 

@@ -10,9 +10,9 @@ Statement = TypedDict(
         "id": Required[str],
         "mainsnak": Required["Snak"],
         "rank": Required[Literal["preferred", "normal", "deprecated"]],
-        "qualifiers": Any,
-        "qualifiers-order": dict[str, Any],
-        "references": list[Any],
+        "qualifiers": dict[str, list["Snak"]],
+        "qualifiers-order": list[str],
+        "references": list["Reference"],
     },
     total=False,
 )
@@ -152,7 +152,7 @@ Reference = TypedDict(
     "Reference",
     {
         "hash": str,
-        "snaks": Any,
-        "snaks-order": dict[str, Any],
+        "snaks": dict[str, list["Snak"]],
+        "snaks-order": list[str],
     },
 )
