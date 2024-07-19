@@ -1,4 +1,5 @@
 __pycache__/
+.*_cache/
 *.egg-info/
 apicache/
 throttle.ctrl
