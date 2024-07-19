@@ -194,7 +194,7 @@ def _resolve_object_literal(object: Literal) -> str | pywikibot.WbTime:
     if object.datatype is None:
         return str(object)
     elif object.datatype == XSD.dateTime or object.datatype == XSD.date:
-        data = {
+        data: wikidata_typing.TimeValue = {
             "time": object.toPython().strftime("%Y-%m-%dT%H:%M:%SZ"),
             "precision": 11,
             "after": 0,
@@ -239,8 +239,8 @@ def _resolve_object_bnode_time_value(graph: Graph, object: BNode) -> pywikibot.W
     if calendar_model := graph.value(object, WIKIBASE.timeCalendarModel):
         assert isinstance(calendar_model, URIRef)
 
-    data = {
-        "time": None,
+    data: wikidata_typing.TimeValue = {
+        "time": "",
         "precision": 11,
         "after": 0,
         "before": 0,
@@ -258,6 +258,7 @@ def _resolve_object_bnode_time_value(graph: Graph, object: BNode) -> pywikibot.W
         data["timezone"] = timezone.toPython()  # type: ignore
     if calendar_model:
         data["calendarmodel"] = str(calendar_model)
+    assert data["time"] != "", "missing time value"
     return pywikibot.WbTime.fromWikibase(data, site=SITE)
 
 
@@ -276,10 +277,8 @@ def _resolve_object_bnode_quantity_value(
     if unit := graph.value(object, WIKIBASE.quantityUnit):
         assert isinstance(unit, URIRef)
 
-    data = {
-        "amount": None,
-        "upperBound": None,
-        "lowerBound": None,
+    data: wikidata_typing.QuantityValue = {
+        "amount": "",
         "unit": "1",
     }
     if amount:
@@ -290,6 +289,7 @@ def _resolve_object_bnode_quantity_value(
         data["lowerBound"] = f"+{lower_bound}"
     if unit:
         data["unit"] = str(unit)
+    assert data["amount"] != "", "missing amount value"
     return pywikibot.WbQuantity.fromWikibase(data, site=SITE)
 
 

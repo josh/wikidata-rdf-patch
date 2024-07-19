@@ -113,7 +113,7 @@ class TimeDataValue(TypedDict):
 # https://josh.github.io/wikidata-api-schemas/data-values/time.schema.json#/properties/value
 class TimeValue(TypedDict):
     time: str
-    timezone: str
+    timezone: int
     before: int
     after: int
     precision: int
