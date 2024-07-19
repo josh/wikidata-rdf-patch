@@ -6,6 +6,8 @@ charset-normalizer==3.3.2
     # via requests
 click==8.1.7
     # via wikidata-rdf-patch (pyproject.toml)
+exceptiongroup==1.2.2
+    # via pytest
 idna==3.7
     # via requests
 iniconfig==2.0.0
@@ -40,6 +42,10 @@ ruff==0.5.3
     # via wikidata-rdf-patch (pyproject.toml)
 six==1.16.0
     # via isodate
+tomli==2.0.1
+    # via
+    #   mypy
+    #   pytest
 types-requests==2.32.0.20240712
     # via wikidata-rdf-patch (pyproject.toml)
 typing-extensions==4.12.2
