@@ -31,7 +31,7 @@ from .rdf_patch import SITE, fetch_page_qids, process_graph
 @click.option(
     "--blocklist-url",
     envvar="WIKIDATA_BLOCKLIST_URL",
-    default="https://www.wikidata.org/wiki/User:Josh404Bot/Blocklist",  # TODO: Default to empty string
+    default="",
     help="Wikidata blocklist page URL",
 )
 @click.version_option()
