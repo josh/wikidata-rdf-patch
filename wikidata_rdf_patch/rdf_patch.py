@@ -14,6 +14,8 @@ from rdflib import XSD, Graph
 from rdflib.namespace import Namespace, NamespaceManager
 from rdflib.term import BNode, Literal, URIRef
 
+from . import wikidata_typing
+
 SITE = pywikibot.Site("wikidata", "wikidata")
 
 
@@ -437,7 +439,7 @@ def process_graph(
     username: str,
     input: TextIO,
     blocked_qids: set[str] = set(),
-) -> Iterator[tuple[pywikibot.ItemPage, list[dict[str, Any]], str | None]]:
+) -> Iterator[tuple[pywikibot.ItemPage, list[wikidata_typing.Statement], str | None]]:
     pywikibot.config.usernames["wikidata"]["wikidata"] = username
     pywikibot.config.password_file = "user-password.py"
     pywikibot.config.maxlag = 10
@@ -587,10 +589,10 @@ def process_graph(
         summary: str | None = edit_summaries.get(item)
         print(f"Edit {item.id}: {summary}", file=sys.stderr)
 
-        claims_json: list[dict[str, Any]] = []
+        claims_json: list[wikidata_typing.Statement] = []
         for hclaim in claims:
             changed_claim: pywikibot.Claim = hclaim.claim
-            claim_json: dict[str, Any] = changed_claim.toJSON()
+            claim_json: wikidata_typing.Statement = changed_claim.toJSON()
             assert claim_json, "Claim had serialization error"
             claims_json.append(claim_json)
             print(
