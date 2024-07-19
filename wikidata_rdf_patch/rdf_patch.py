@@ -581,7 +581,7 @@ def process_graph(
         else:
             print_warning("NotImplemented", f"Unknown subject: {subject}")
 
-    for item, claims in changed_claims.items():
+    for item, hclaims in changed_claims.items():
         if item.id in blocked_qids:
             print_warning("BadItem", f"Skipping edit, {item.id} is blocked")
             continue
@@ -589,19 +589,16 @@ def process_graph(
         summary: str | None = edit_summaries.get(item)
         print(f"Edit {item.id}: {summary}", file=sys.stderr)
 
-        claims_json: list[wikidata_typing.Statement] = []
-        for hclaim in claims:
-            changed_claim: pywikibot.Claim = hclaim.claim
-            claim_json: wikidata_typing.Statement = changed_claim.toJSON()
-            assert claim_json, "Claim had serialization error"
-            claims_json.append(claim_json)
-            print(
-                f" ⮑ {changed_claim.id} / {changed_claim.snak or '(new claim)'}",
-                file=sys.stderr,
-            )
+        statements: list[wikidata_typing.Statement] = [
+            hclaim.claim.toJSON() for hclaim in hclaims
+        ]
+        for statement in statements:
+            statement_id = statement["mainsnak"]["property"]
+            statement_snak = statement.get("id", "(new claim)")
+            print(f" ⮑ {statement_id} / {statement_snak}", file=sys.stderr)
 
-        assert len(claims_json) > 0, "No claims to save"
-        yield (item, claims_json, summary)
+        assert len(statements) > 0, "No claims to save"
+        yield (item, statements, summary)
 
 
 def fetch_page_qids(title: str) -> set[str]:
