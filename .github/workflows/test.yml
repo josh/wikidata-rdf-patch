@@ -51,7 +51,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv pip install --system --constraint requirements.txt '.[test]'
+          uv pip install --system --constraint requirements.txt '.[dev]'
 
       - name: Test
         run: |
