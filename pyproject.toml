@@ -26,7 +26,7 @@ classifiers = [
 wikidata-rdf-patch = "wikidata_rdf_patch.cli:main"
 
 [project.optional-dependencies]
-test = [
+dev = [
     "mypy>=1.0.0,<2.0",
     "pytest>=8.0.0,<9.0",
     "ruff>=0.4.0",
