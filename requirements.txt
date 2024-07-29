@@ -38,7 +38,7 @@ requests==2.32.3
     # via
     #   wikidata-rdf-patch (pyproject.toml)
     #   pywikibot
-ruff==0.5.4
+ruff==0.5.5
     # via wikidata-rdf-patch (pyproject.toml)
 six==1.16.0
     # via isodate
