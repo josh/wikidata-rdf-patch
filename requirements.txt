@@ -30,7 +30,7 @@ pyparsing==3.1.2
     # via rdflib
 pytest==8.3.2
     # via wikidata-rdf-patch (pyproject.toml)
-pywikibot==9.3.0
+pywikibot==9.3.1
     # via wikidata-rdf-patch (pyproject.toml)
 rdflib==7.0.0
     # via wikidata-rdf-patch (pyproject.toml)
