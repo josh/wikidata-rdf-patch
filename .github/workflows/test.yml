@@ -14,7 +14,7 @@ jobs:
         with:
           python-version-file: "pyproject.toml"
 
-      - uses: astral-sh/setup-uv@v1
+      - uses: astral-sh/setup-uv@v2
 
       - name: Install dependencies
         run: |
@@ -45,7 +45,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - uses: astral-sh/setup-uv@v1
+      - uses: astral-sh/setup-uv@v2
 
       - name: Install dependencies
         run: |
