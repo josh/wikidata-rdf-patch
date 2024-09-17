@@ -8,7 +8,7 @@ click==8.1.7
     # via wikidata-rdf-patch (pyproject.toml)
 exceptiongroup==1.2.2
     # via pytest
-idna==3.8
+idna==3.10
     # via requests
 iniconfig==2.0.0
     # via pytest
