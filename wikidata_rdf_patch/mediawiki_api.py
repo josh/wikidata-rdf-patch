@@ -103,8 +103,13 @@ def _session_request(
                 time.sleep(5)
                 retries -= 1
                 continue
+            elif e.code == "badtoken" and retries > 0:
+                logger.info("csrf token expired, refreshing")
+                session.csrf_token = _token(type="csrf", cookies=session.cookies)
+                retries -= 1
+                continue
             elif e.code == "assertbotfailed" and retries > 0:
-                logger.debug("session expired, logging in again")
+                logger.info("session expired, logging in again")
                 _login(session=session)
                 retries -= 1
                 continue
