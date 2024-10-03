@@ -1,20 +1,21 @@
 import datetime
 import json
+import logging
 import re
-import sys
 import urllib.request
 from collections import OrderedDict, defaultdict
 from collections.abc import Iterator
 from functools import cache
 from typing import Any, TextIO, cast
 
-import click
 import pywikibot  # type: ignore
 from rdflib import XSD, Graph
 from rdflib.namespace import Namespace, NamespaceManager
 from rdflib.term import BNode, Literal, URIRef
 
 from . import wikidata_typing
+
+logger = logging.getLogger("rdf_patch")
 
 SITE = pywikibot.Site("wikidata", "wikidata")
 
@@ -465,10 +466,7 @@ def process_graph(
             target = _resolve_object(graph, object)
             did_change, claim = _item_append_claim_target(item, wdt_property, target)
             if claim.rank == "deprecated":
-                print_warning(
-                    "DeprecatedClaim",
-                    f"<{_claim_uri(claim)}> already exists, but is deprecated",
-                )
+                logger.warning("DeprecatedClaim <%s> already exists", _claim_uri(claim))
             mark_changed(item, claim, did_change)
 
         elif predicate_prefix == "p" and isinstance(object, BNode):
@@ -487,8 +485,11 @@ def process_graph(
             edit_summaries[item] = object.toPython()
 
         else:
-            print_warning(
-                "NotImplemented", f"Unknown wd triple: {subject} {predicate} {object}"
+            logger.error(
+                "NotImplemented: Unknown wd triple: %s %s %s",
+                subject,
+                predicate,
+                object,
             )
 
     def visit_wds_subject(
@@ -554,7 +555,7 @@ def process_graph(
             edit_summaries[item] = object.toPython()
 
         else:
-            print_warning("NotImplemented", f"Unknown wds triple: {predicate} {object}")
+            logger.error("NotImplemented: Unknown wds triple: %s %s", predicate, object)
 
     for subject in _subjects(graph):
         if isinstance(subject, BNode):
@@ -583,15 +584,15 @@ def process_graph(
                 assert _resolve_object(graph, object)
 
         else:
-            print_warning("NotImplemented", f"Unknown subject: {subject}")
+            logger.error("NotImplemented: Unknown subject: %s", subject)
 
     for item, hclaims in changed_claims.items():
         if item.id in blocked_qids:
-            print_warning("BadItem", f"Skipping edit, {item.id} is blocked")
+            logger.warning("Skipping edit, %s is blocked", item.id)
             continue
 
         summary: str | None = edit_summaries.get(item)
-        print(f"Edit {item.id}: {summary}", file=sys.stderr)
+        logger.info("Edit %s: %s", item.id, summary or "(no summary)")
 
         statements: list[wikidata_typing.Statement] = [
             hclaim.claim.toJSON() for hclaim in hclaims
@@ -599,7 +600,7 @@ def process_graph(
         for statement in statements:
             statement_id = statement["mainsnak"]["property"]
             statement_snak = statement.get("id", "(new claim)")
-            print(f" ⮑ {statement_id} / {statement_snak}", file=sys.stderr)
+            logger.info(" ⮑ %s / %s", statement_id, statement_snak)
 
         assert len(statements) > 0, "No claims to save"
         yield (item, statements, summary)
@@ -631,7 +632,3 @@ def fetch_page_qids(title: str) -> set[str]:
     page = next(iter(pages.values()))
     text = page["extract"]
     return set(re.findall(r"Q[0-9]+", text))
-
-
-def print_warning(title: str, message: str) -> None:
-    click.echo(f"::warning title={title}::{message}", file=sys.stderr)
