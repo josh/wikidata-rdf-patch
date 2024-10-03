@@ -158,4 +158,8 @@ def wbeditentity(
         cookies=session.cookies,
     )
     success: int = resp.get("success", 0)
+
+    if success != 1:
+        logger.debug("wbeditentity response: %s", resp)
+
     return success == 1
