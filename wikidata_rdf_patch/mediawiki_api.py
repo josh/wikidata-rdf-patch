@@ -87,8 +87,8 @@ def _session_request(
     method: Literal["GET", "POST"],
     params: dict[str, str],
     retries: int = 5,
-):
-    while retries > 0:
+) -> dict[str, Any]:
+    while True:
         try:
             return _request(
                 action=action,
@@ -97,16 +97,16 @@ def _session_request(
                 cookies=session.cookies,
             )
         except Error as e:
-            retries -= 1
-
             # https://www.mediawiki.org/wiki/Manual:Maxlag_parameter
-            if e.code == "maxlag":
+            if e.code == "maxlag" and retries > 0:
                 logger.debug("Waiting for %.1f seconds", 5)
                 time.sleep(5)
+                retries -= 1
                 continue
-            elif e.code == "assertbotfailed":
+            elif e.code == "assertbotfailed" and retries > 0:
                 logger.debug("session expired, logging in again")
                 _login(session=session)
+                retries -= 1
                 continue
             else:
                 raise e
@@ -117,7 +117,7 @@ class LoginError(Exception):
 
 
 # https://www.wikidata.org/w/api.php?action=help&modules=login
-def _login(session: Session):
+def _login(session: Session) -> None:
     session.login_token = _token(type="login", cookies=session.cookies)
     params = {
         "lgname": session.username,
