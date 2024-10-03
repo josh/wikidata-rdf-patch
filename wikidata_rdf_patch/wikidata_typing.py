@@ -2,6 +2,22 @@ from typing import Literal, TypedDict, Union
 
 from typing_extensions import Required
 
+# https://josh.github.io/wikidata-api-schemas/multilingual-text-value.schema.json#/$defs/values
+Labels = dict[str, "MultilingualTextValue"]
+
+# https://josh.github.io/wikidata-api-schemas/multilingual-text-value.schema.json#/$defs/values
+Descriptions = dict[str, "MultilingualTextValue"]
+
+# https://josh.github.io/wikidata-api-schemas/multilingual-text-value.schema.json#/$defs/multi-values
+Aliases = dict[str, list["MultilingualTextValue"]]
+
+
+# https://josh.github.io/wikidata-api-schemas/multilingual-text-value.schema.json
+class MultilingualTextValue(TypedDict):
+    language: str
+    value: str
+
+
 # https://josh.github.io/wikidata-api-schemas/statement.schema.json
 Statement = TypedDict(
     "Statement",

@@ -10,7 +10,6 @@ from typing import Any, TextIO, cast
 
 import click
 import pywikibot  # type: ignore
-import pywikibot.config  # type: ignore
 from rdflib import XSD, Graph
 from rdflib.namespace import Namespace, NamespaceManager
 from rdflib.term import BNode, Literal, URIRef
@@ -441,11 +440,6 @@ def process_graph(
     input: TextIO,
     blocked_qids: set[str] = set(),
 ) -> Iterator[tuple[pywikibot.ItemPage, list[wikidata_typing.Statement], str | None]]:
-    pywikibot.config.usernames["wikidata"]["wikidata"] = username
-    pywikibot.config.password_file = "user-password.py"
-    pywikibot.config.maxlag = 10
-    pywikibot.config.put_throttle = 0
-
     graph = Graph()
     data = PREFIXES + input.read()
     graph.parse(data=data)
