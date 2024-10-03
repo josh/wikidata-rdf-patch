@@ -2,5 +2,6 @@ __pycache__/
 .*_cache/
 *.egg-info/
 apicache/
+pywikibot.lwp
 throttle.ctrl
 user-password.py
