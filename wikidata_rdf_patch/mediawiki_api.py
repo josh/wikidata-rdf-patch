@@ -16,12 +16,14 @@ from wikidata_rdf_patch.wikidata_typing import (
 logger = logging.getLogger("mediawiki-api")
 
 
-class MaxlagError(Exception):
-    pass
+class Error(Exception):
+    code: str
+    info: str
 
-
-class LoginError(Exception):
-    pass
+    def __init__(self, code: str, info: str):
+        self.code = code
+        self.info = info
+        super().__init__(f"[{code}] {info}")
 
 
 # https://www.wikidata.org/w/api.php?action=help
@@ -32,9 +34,6 @@ def _request(
     cookies: http.cookiejar.CookieJar = http.cookiejar.CookieJar(),
     retries: int = 5,
 ) -> dict[str, Any]:
-    if retries <= 0:
-        raise MaxlagError("Max retries reached")
-
     url = "https://www.wikidata.org/w/api.php"
     headers: dict[str, str] = {}
     params["action"] = action
@@ -54,17 +53,21 @@ def _request(
         cookies.extract_cookies(response, req)
     api_data: dict[str, Any] = json.loads(data)
 
-    # https://www.mediawiki.org/wiki/Manual:Maxlag_parameter
-    if api_data.get("error", {}).get("code") == "maxlag":
+    if api_error := api_data.get("error", {}):
         logger.error(api_data["error"]["info"])
-        time.sleep(5)
-        return _request(
-            action=action,
-            params=params,
-            method=method,
-            cookies=cookies,
-            retries=retries - 1,
-        )
+
+        # https://www.mediawiki.org/wiki/Manual:Maxlag_parameter
+        if api_error["code"] == "maxlag" and retries > 0:
+            time.sleep(5)
+            return _request(
+                action=action,
+                params=params,
+                method=method,
+                cookies=cookies,
+                retries=retries - 1,
+            )
+
+        raise Error(code=api_error["code"], info=api_error["info"])
 
     warnings = api_data.get("warnings", {}).get(action, {})
     for warning in warnings.values():
@@ -88,6 +91,10 @@ class Session:
     csrf_token: str
     login_token: str
     username: str
+
+
+class LoginError(Exception):
+    pass
 
 
 # https://www.wikidata.org/w/api.php?action=help&modules=login
@@ -158,8 +165,4 @@ def wbeditentity(
         cookies=session.cookies,
     )
     success: int = resp.get("success", 0)
-
-    if success != 1:
-        logger.debug("wbeditentity response: %s", resp)
-
     return success == 1
