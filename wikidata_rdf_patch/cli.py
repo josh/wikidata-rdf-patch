@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import TextIO
 
@@ -34,6 +35,7 @@ from .rdf_patch import SITE, fetch_page_qids, process_graph
     default="",
     help="Wikidata blocklist page URL",
 )
+@click.option("--verbose", "-v", is_flag=True)
 @click.version_option()
 def main(
     input: TextIO,
@@ -41,7 +43,11 @@ def main(
     password: str,
     dry_run: bool,
     blocklist_url: str,
+    verbose: bool,
 ) -> None:
+    log_level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(level=log_level)
+
     if dry_run is False:
         pywikibot.config.password_file = "user-password.py"
         with open(pywikibot.config.password_file, "w") as file:
