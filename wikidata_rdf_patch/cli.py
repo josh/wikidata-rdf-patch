@@ -69,10 +69,10 @@ def main(
         blocked_qids = fetch_page_qids(
             title=blocklist_url.removeprefix("https://www.wikidata.org/wiki/")
         )
-        click.echo(f"Loaded {len(blocked_qids)} QIDs from blocklist", err=True)
+        logger.debug("Loaded %i QIDs from blocklist", len(blocked_qids))
     elif not blocklist_url.startswith("http"):
         blocked_qids = fetch_page_qids(title=blocklist_url)
-        click.echo(f"Loaded {len(blocked_qids)} QIDs from blocklist", err=True)
+        logger.debug("Loaded %i QIDs from blocklist", len(blocked_qids))
 
     edits = process_graph(username=username, input=input, blocked_qids=blocked_qids)
 
