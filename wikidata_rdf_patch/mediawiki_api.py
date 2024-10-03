@@ -157,5 +157,5 @@ def wbeditentity(
         params=params,
         cookies=session.cookies,
     )
-    success: int = resp["success"]
+    success: int = resp.get("success", 0)
     return success == 1
