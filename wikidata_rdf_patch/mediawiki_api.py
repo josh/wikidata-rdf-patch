@@ -29,10 +29,9 @@ class Error(Exception):
 # https://www.wikidata.org/w/api.php?action=help
 def _request(
     action: str,
-    method: Literal["GET", "POST"] = "GET",
-    params: dict[str, str] = {},
-    cookies: http.cookiejar.CookieJar = http.cookiejar.CookieJar(),
-    retries: int = 5,
+    method: Literal["GET", "POST"],
+    params: dict[str, str],
+    cookies: http.cookiejar.CookieJar,
 ) -> dict[str, Any]:
     url = "https://www.wikidata.org/w/api.php"
     headers: dict[str, str] = {}
@@ -55,18 +54,6 @@ def _request(
 
     if api_error := api_data.get("error", {}):
         logger.error(api_data["error"]["info"])
-
-        # https://www.mediawiki.org/wiki/Manual:Maxlag_parameter
-        if api_error["code"] == "maxlag" and retries > 0:
-            time.sleep(5)
-            return _request(
-                action=action,
-                params=params,
-                method=method,
-                cookies=cookies,
-                retries=retries - 1,
-            )
-
         raise Error(code=api_error["code"], info=api_error["info"])
 
     warnings = api_data.get("warnings", {}).get(action, {})
@@ -91,6 +78,38 @@ class Session:
     csrf_token: str
     login_token: str
     username: str
+    password: str
+
+
+def _session_request(
+    session: Session,
+    action: str,
+    method: Literal["GET", "POST"],
+    params: dict[str, str],
+    retries: int = 5,
+):
+    while retries > 0:
+        try:
+            return _request(
+                action=action,
+                params=params,
+                method=method,
+                cookies=session.cookies,
+            )
+        except Error as e:
+            retries -= 1
+
+            # https://www.mediawiki.org/wiki/Manual:Maxlag_parameter
+            if e.code == "maxlag":
+                logger.debug("Waiting for %.1f seconds", 5)
+                time.sleep(5)
+                continue
+            elif e.code == "assertbotfailed":
+                logger.debug("session expired, logging in again")
+                _login(session=session)
+                continue
+            else:
+                raise e
 
 
 class LoginError(Exception):
@@ -98,26 +117,37 @@ class LoginError(Exception):
 
 
 # https://www.wikidata.org/w/api.php?action=help&modules=login
-def login(username: str, password: str) -> Session:
-    cookies = http.cookiejar.CookieJar()
-    lgtoken = _token(type="login", cookies=cookies)
+def _login(session: Session):
+    session.login_token = _token(type="login", cookies=session.cookies)
     params = {
-        "lgname": username,
-        "lgpassword": password,
-        "lgtoken": lgtoken,
+        "lgname": session.username,
+        "lgpassword": session.password,
+        "lgtoken": session.login_token,
     }
-    resp = _request(method="POST", action="login", params=params, cookies=cookies)
+    resp = _request(
+        method="POST",
+        action="login",
+        params=params,
+        cookies=session.cookies,
+    )
     result: str = resp["login"]["result"]
     if result == "Success":
-        csrf_token = _token(type="csrf", cookies=cookies)
-        return Session(
-            cookies=cookies,
-            csrf_token=csrf_token,
-            login_token=lgtoken,
-            username=username,
-        )
+        session.csrf_token = _token(type="csrf", cookies=session.cookies)
     else:
         raise LoginError()
+
+
+# https://www.wikidata.org/w/api.php?action=help&modules=login
+def login(username: str, password: str) -> Session:
+    session = Session(
+        cookies=http.cookiejar.CookieJar(),
+        csrf_token="",
+        login_token="",
+        username=username,
+        password=password,
+    )
+    _login(session=session)
+    return session
 
 
 # https://www.wikidata.org/w/api.php?action=help&modules=logout
@@ -158,11 +188,11 @@ def wbeditentity(
         params["baserevid"] = str(baserevid)
     if summary:
         params["summary"] = summary
-    resp = _request(
+    resp = _session_request(
+        session=session,
         method="POST",
         action="wbeditentity",
         params=params,
-        cookies=session.cookies,
     )
     success: int = resp.get("success", 0)
     return success == 1
