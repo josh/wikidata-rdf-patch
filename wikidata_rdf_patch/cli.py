@@ -39,6 +39,7 @@ logger = logging.getLogger("wikidata-rdf-patch")
 )
 @click.option(
     "--min-time-between-edits",
+    envvar="WIKIDATA_MIN_TIME_BETWEEN_EDITS",
     type=int,
     default=10,
     help="Minimum time between edits in seconds",
