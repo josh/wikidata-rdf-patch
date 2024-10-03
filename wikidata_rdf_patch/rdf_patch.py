@@ -1,6 +1,8 @@
 import datetime
+import json
 import re
 import sys
+import urllib.request
 from collections import OrderedDict, defaultdict
 from collections.abc import Iterator
 from functools import cache
@@ -9,7 +11,6 @@ from typing import Any, TextIO, cast
 import click
 import pywikibot  # type: ignore
 import pywikibot.config  # type: ignore
-import requests
 from rdflib import XSD, Graph
 from rdflib.namespace import Namespace, NamespaceManager
 from rdflib.term import BNode, Literal, URIRef
@@ -602,19 +603,26 @@ def process_graph(
 
 
 def fetch_page_qids(title: str) -> set[str]:
+    if not title:
+        return set()
     assert not title.startswith("http"), "Expected title, not URL"
-    r = requests.get(
-        url="https://www.wikidata.org/w/api.php",
-        params={
+
+    query = urllib.parse.urlencode(
+        {
             "action": "query",
             "format": "json",
             "titles": title,
             "prop": "extracts",
             "explaintext": "1",
-        },
+        }
     )
-    r.raise_for_status()
-    data = r.json()
+    url = f"https://www.wikidata.org/w/api.php?{query}"
+
+    with urllib.request.urlopen(url) as response:
+        data = response.read()
+        assert isinstance(data, bytes)
+    data = json.loads(data)
+
     pages = data["query"]["pages"]
     assert len(pages) == 1, "Expected one page"
     page = next(iter(pages.values()))
