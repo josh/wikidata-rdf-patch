@@ -532,6 +532,15 @@ def process_graph(
                 claim.setTarget(target)
                 mark_changed(item, claim)
 
+        elif predicate_prefix == "psv":
+            property = get_property_page(predicate_local_name)
+            target = _resolve_object(graph, object)
+            assert claim.getID() == property.getID()
+
+            if not claim.target_equals(target):
+                claim.setTarget(target)
+                mark_changed(item, claim)
+
         elif predicate == WIKIBASE.rank:
             assert isinstance(object, URIRef)
             did_change = _claim_set_rank(claim, object)

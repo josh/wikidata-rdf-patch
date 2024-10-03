@@ -227,6 +227,30 @@ def test_quantity_value() -> None:
     _ = list(process_graph(username, StringIO(triples)))
 
 
+def test_update_property_quantity_value() -> None:
+    triples = """
+      wd:Q4115189 p:P2043 _:p.
+      _:p psv:P2043 _:psv.
+      _:psv rdf:type wikibase:QuantityValue;
+        wikibase:quantityAmount "+5"^^xsd:decimal;
+        wikibase:quantityUnit wd:Q11573.
+    """
+    edits = list(process_graph(username, StringIO(triples)))
+    assert len(edits) == 1
+    (item, claims, summary) = edits[0]
+    assert item.id == "Q4115189"
+    assert summary is None
+    assert len(claims) == 1
+    assert claims[0]["mainsnak"]["snaktype"] == "value"
+    assert claims[0]["mainsnak"]["property"] == "P2043"
+    assert claims[0]["mainsnak"]["datavalue"]["type"] == "quantity"
+    assert claims[0]["mainsnak"]["datavalue"]["value"]["amount"] == "+5"
+    assert (
+        claims[0]["mainsnak"]["datavalue"]["value"]["unit"]
+        == "http://www.wikidata.org/entity/Q11573"
+    )
+
+
 def test_time_value() -> None:
     triples = """
       wikidatabots:testSubject wikidatabots:assertValue _:b1.
