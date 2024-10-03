@@ -123,6 +123,7 @@ class LoginError(Exception):
 
 # https://www.wikidata.org/w/api.php?action=help&modules=login
 def _login(session: Session) -> None:
+    session.cookies = http.cookiejar.CookieJar()
     session.login_token = _token(type="login", cookies=session.cookies)
     params = {
         "lgname": session.username,
