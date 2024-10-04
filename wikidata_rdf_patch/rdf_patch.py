@@ -192,38 +192,56 @@ def _resolve_object_uriref(object: URIRef) -> wikidata_typing.WikibaseEntityIdDa
         raise NotImplementedError(f"Unknown item: {object}")
 
 
-def _pywikibot_from_wikibase_datavalue(
-    data: wikidata_typing.DataValue,
-) -> (
-    pywikibot.Coordinate
-    | pywikibot.WbMonolingualText
-    | pywikibot.WbQuantity
-    | str
-    | pywikibot.WbTime
-    | pywikibot.ItemPage
-    | pywikibot.PropertyPage
-):
-    if data["type"] == "globecoordinate":
-        return pywikibot.Coordinate.fromWikibase(data=data["value"], site=SITE)
-    elif data["type"] == "monolingualtext":
-        return pywikibot.WbMonolingualText.fromWikibase(data=data["value"], site=SITE)
-    elif data["type"] == "quantity":
-        return pywikibot.WbQuantity.fromWikibase(data=data["value"], site=SITE)
-    elif data["type"] == "string":
-        return data["value"]
-    elif data["type"] == "time":
-        return pywikibot.WbTime.fromWikibase(data=data["value"], site=SITE)
-    elif data["type"] == "wikibase-entityid":
-        if data["value"]["entity-type"] == "item":
-            return get_item_page(data["value"]["id"])
-        elif data["value"]["entity-type"] == "property":
-            return pywikibot.PropertyPage(SITE, data["value"]["id"])
-        else:
-            raise NotImplementedError(
-                f"Unknown entity-type: {data['value']['entity-type']}"
-            )
-    else:
-        raise NotImplementedError(f"Unknown data type: {data['type']}")
+def _pywikibot_claim_to_json(claim: pywikibot.Claim) -> wikidata_typing.Statement:
+    assert claim.isQualifier is False
+    assert claim.isReference is False
+    if claim.target is None:
+        return {
+            "id": "",
+            "type": "statement",
+            "rank": "normal",
+            "mainsnak": {
+                "snaktype": "novalue",
+                "property": claim.getID(),
+            },
+        }
+    return cast(wikidata_typing.Statement, claim.toJSON())
+
+
+def _pywikibot_claim_from_json(snak: wikidata_typing.Snak) -> pywikibot.Claim:
+    statement = {"type": "statement", "mainsnak": snak}
+    claim = pywikibot.Claim.fromJSON(site=SITE, data=statement)
+    assert claim.isQualifier is False
+    assert claim.isReference is False
+    return claim
+
+
+def _pywikibot_qualifier_to_json(qualifier: pywikibot.Claim) -> wikidata_typing.Snak:
+    assert qualifier.isQualifier is True
+    assert qualifier.isReference is False
+    return cast(wikidata_typing.Snak, qualifier.toJSON())
+
+
+def _pywikibot_qualifier_from_json(snak: wikidata_typing.Snak) -> pywikibot.Claim:
+    qualifier = pywikibot.Claim.fromJSON(site=SITE, data={"mainsnak": snak})
+    qualifier.isQualifier = True
+    assert qualifier.isQualifier is True
+    assert qualifier.isReference is False
+    return qualifier
+
+
+def _pywikibot_reference_to_json(reference: pywikibot.Claim) -> wikidata_typing.Snak:
+    assert reference.isQualifier is False
+    assert reference.isReference is True
+    return cast(wikidata_typing.Snak, reference.toJSON())
+
+
+def _pywikibot_reference_from_json(snak: wikidata_typing.Snak) -> pywikibot.Claim:
+    reference = pywikibot.Claim.fromJSON(site=SITE, data={"mainsnak": snak})
+    reference.isReference = True
+    assert reference.isQualifier is False
+    assert reference.isReference is True
+    return reference
 
 
 def _resolve_object_literal(
@@ -365,8 +383,7 @@ def _resolve_object_bnode_reference(
         pid = snak["property"]
         if pid not in source:
             source[pid] = []
-        claim = pywikibot.Claim.fromJSON(site=SITE, data={"mainsnak": snak})
-        claim.isReference = True
+        claim = _pywikibot_reference_from_json(snak)
         source[pid].append(claim)
 
     for pr_name, pr_object in _predicate_ns_objects(graph, object, PR):
@@ -428,16 +445,52 @@ def _item_append_claim_target(
         item.claims[pid] = []
     claims = item.claims[pid]
 
-    target_obj = _pywikibot_from_wikibase_datavalue(data=target)
     for claim in claims:
-        if claim.target_equals(target_obj):
+        claim_json = _pywikibot_claim_to_json(claim)
+        if (
+            claim_json["mainsnak"]["snaktype"] == "value"
+            and claim_json["mainsnak"]["datavalue"] == target
+        ):
             return (False, claim)
 
-    new_claim = pywikibot.Claim(site=SITE, pid=pid)
-    new_claim.setTarget(target_obj)
+    snak = _property_snakvalue(pid=pid, value=target)
+    new_claim = _pywikibot_claim_from_json(snak)
     item.claims[pid].append(new_claim)
 
     return (True, new_claim)
+
+
+def _claim_set_target(
+    claim: pywikibot.Claim,
+    target: wikidata_typing.DataValue,
+) -> bool:
+    claim_json = _pywikibot_claim_to_json(claim)
+    if claim_json["mainsnak"]["snaktype"] == "value" and _datavalue_equal(
+        claim_json["mainsnak"]["datavalue"], target
+    ):
+        return False
+
+    snak = _property_snakvalue(pid=claim.getID(), value=target)
+    new_claim = _pywikibot_claim_from_json(snak)
+    claim.setTarget(new_claim.target)
+
+    return True
+
+
+def _datavalue_equal(
+    a: wikidata_typing.DataValue, b: wikidata_typing.DataValue
+) -> bool:
+    if a["type"] == "wikibase-entityid" and b["type"] == "wikibase-entityid":
+        if a["value"]["entity-type"] != b["value"]["entity-type"]:
+            return False
+        elif "numeric-id" in a["value"] and "numeric-id" in b["value"]:
+            return a["value"]["numeric-id"] == b["value"]["numeric-id"]
+        elif "id" in a["value"] and "id" in b["value"]:
+            return a["value"]["id"] == b["value"]["id"]
+        else:
+            return False
+    else:
+        return a == b
 
 
 def _claim_append_qualifer(
@@ -451,13 +504,15 @@ def _claim_append_qualifer(
         claim.qualifiers[pid] = []
     qualifiers = claim.qualifiers[pid]
 
-    target_obj = _pywikibot_from_wikibase_datavalue(data=target)
     for qualifier in qualifiers:
-        if qualifier.target_equals(target_obj):
+        qualifier_json = _pywikibot_qualifier_to_json(qualifier)
+        if qualifier_json["snaktype"] == "value" and _datavalue_equal(
+            qualifier_json["datavalue"], target
+        ):
             return False
 
-    new_qualifier = pywikibot.Claim(site=SITE, pid=pid, is_qualifier=True)
-    new_qualifier.setTarget(target_obj)
+    snak = _property_snakvalue(pid=pid, value=target)
+    new_qualifier = _pywikibot_qualifier_from_json(snak)
     claim.qualifiers[pid].append(new_qualifier)
 
     return True
@@ -470,15 +525,17 @@ def _claim_set_qualifer(
 ) -> bool:
     assert pid.startswith("P"), pid
 
-    target_obj = _pywikibot_from_wikibase_datavalue(target)
-
     if pid in claim.qualifiers and len(claim.qualifiers[pid]) == 1:
         qualifier: pywikibot.Claim = claim.qualifiers[pid][0]
-        if qualifier.target_equals(target_obj):
+        qualifier_json = _pywikibot_qualifier_to_json(qualifier)
+        if qualifier_json["snaktype"] == "value" and _datavalue_equal(
+            qualifier_json["datavalue"], target
+        ):
             return False
 
-    new_qualifier = pywikibot.Claim(site=SITE, pid=pid, is_qualifier=True)
-    new_qualifier.setTarget(target_obj)
+    snak = _property_snakvalue(pid=pid, value=target)
+    new_qualifier = pywikibot.Claim.fromJSON(site=SITE, data={"mainsnak": snak})
+    new_qualifier.isQualifier = True
     claim.qualifiers[pid] = [new_qualifier]
 
     return True
@@ -560,8 +617,8 @@ def process_graph(
         predicate_prefix, predicate_local_name = _compute_qname(predicate)
 
         if predicate_prefix == "pq" or predicate_prefix == "pqv":
-            target2 = _resolve_object(graph, object)
-            did_change = _claim_append_qualifer(claim, predicate_local_name, target2)
+            target = _resolve_object(graph, object)
+            did_change = _claim_append_qualifer(claim, predicate_local_name, target)
             mark_changed(item, claim, did_change)
 
         elif predicate_prefix == "pqe" or predicate_prefix == "pqve":
@@ -570,25 +627,21 @@ def process_graph(
                     del claim.qualifiers[predicate_local_name]
                     mark_changed(item, claim, True)
             else:
-                target2 = _resolve_object(graph, object)
-                did_change = _claim_set_qualifer(claim, predicate_local_name, target2)
+                target = _resolve_object(graph, object)
+                did_change = _claim_set_qualifer(claim, predicate_local_name, target)
                 mark_changed(item, claim, did_change)
 
         elif predicate_prefix == "ps":
-            target = _pywikibot_from_wikibase_datavalue(_resolve_object(graph, object))
+            target = _resolve_object(graph, object)
             assert claim.getID() == predicate_local_name
-
-            if not claim.target_equals(target):
-                claim.setTarget(target)
-                mark_changed(item, claim)
+            did_change = _claim_set_target(claim, target)
+            mark_changed(item, claim, did_change)
 
         elif predicate_prefix == "psv":
-            target = _pywikibot_from_wikibase_datavalue(_resolve_object(graph, object))
+            target = _resolve_object(graph, object)
             assert claim.getID() == predicate_local_name
-
-            if not claim.target_equals(target):
-                claim.setTarget(target)
-                mark_changed(item, claim)
+            did_change = _claim_set_target(claim, target)
+            mark_changed(item, claim, did_change)
 
         elif predicate == WIKIBASE.rank:
             assert isinstance(object, URIRef)
@@ -648,9 +701,7 @@ def process_graph(
         summary: str | None = edit_summaries.get(item)
         logger.info("Edit %s: %s", item.id, summary or "(no summary)")
 
-        statements: list[wikidata_typing.Statement] = [
-            hclaim.claim.toJSON() for hclaim in hclaims
-        ]
+        statements = [_pywikibot_claim_to_json(hclaim.claim) for hclaim in hclaims]
         for statement in statements:
             statement_id = statement["mainsnak"]["property"]
             statement_snak = statement.get("id", "(new claim)")
