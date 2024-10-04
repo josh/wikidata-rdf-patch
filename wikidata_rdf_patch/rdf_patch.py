@@ -178,22 +178,42 @@ def get_property_page(pid: str) -> pywikibot.PropertyPage:
     return pywikibot.PropertyPage(SITE, pid)
 
 
-def _resolve_object_uriref(
-    object: URIRef,
-) -> pywikibot.ItemPage | pywikibot.PropertyPage:
+def _resolve_object_uriref(object: URIRef) -> wikidata_typing.WikibaseEntityIdDataValue:
     prefix, local_name = _compute_qname(object)
     assert prefix == "wd"
     if local_name.startswith("Q"):
-        return get_item_page(local_name)
+        return {
+            "type": "wikibase-entityid",
+            "value": {
+                "entity-type": "item",
+                "numeric-id": int(local_name[1:]),
+                "id": local_name,
+            },
+        }
     elif local_name.startswith("P"):
-        return get_property_page(local_name)
+        return {
+            "type": "wikibase-entityid",
+            "value": {
+                "entity-type": "property",
+                "numeric-id": int(local_name[1:]),
+                "id": local_name,
+            },
+        }
     else:
         raise NotImplementedError(f"Unknown item: {object}")
 
 
 def _pywikibot_from_wikibase_datavalue(
     data: wikidata_typing.DataValue,
-) -> str | pywikibot.WbMonolingualText | pywikibot.WbTime:
+) -> (
+    pywikibot.Coordinate
+    | pywikibot.WbMonolingualText
+    | pywikibot.WbQuantity
+    | str
+    | pywikibot.WbTime
+    | pywikibot.ItemPage
+    | pywikibot.PropertyPage
+):
     if data["type"] == "globecoordinate":
         return pywikibot.Coordinate.fromWikibase(data=data["value"], site=SITE)
     elif data["type"] == "monolingualtext":
@@ -205,7 +225,14 @@ def _pywikibot_from_wikibase_datavalue(
     elif data["type"] == "time":
         return pywikibot.WbTime.fromWikibase(data=data["value"], site=SITE)
     elif data["type"] == "wikibase-entityid":
-        raise NotImplementedError("Unknown data type: wikibase-entityid")
+        if data["value"]["entity-type"] == "item":
+            return get_item_page(data["value"]["id"])
+        elif data["value"]["entity-type"] == "property":
+            return get_property_page(data["value"]["id"])
+        else:
+            raise NotImplementedError(
+                f"Unknown entity-type: {data['value']['entity-type']}"
+            )
     else:
         raise NotImplementedError(f"Unknown data type: {data['type']}")
 
@@ -248,21 +275,21 @@ def _resolve_object_literal(
 
 def _resolve_object(
     graph: Graph, object: AnyRDFObject
-) -> (
-    pywikibot.ItemPage
-    | pywikibot.PropertyPage
-    | pywikibot.WbMonolingualText
-    | pywikibot.WbQuantity
-    | pywikibot.WbTime
-    | WbSource
-    | str
-):
+) -> wikidata_typing.DataValue | WbSource:
     if isinstance(object, URIRef):
         return _resolve_object_uriref(object)
     elif isinstance(object, BNode):
         return _resolve_object_bnode(graph, object)
     elif isinstance(object, Literal):
-        return _pywikibot_from_wikibase_datavalue(data=_resolve_object_literal(object))
+        return _resolve_object_literal(object)
+
+
+def _resolve_object_target(
+    graph: Graph, object: AnyRDFObject
+) -> wikidata_typing.DataValue:
+    obj = _resolve_object(graph, object)
+    assert not isinstance(obj, WbSource)
+    return obj
 
 
 def _resolve_object_bnode_time_value(
@@ -337,19 +364,15 @@ def _resolve_object_bnode_quantity_value(
 
 def _resolve_object_bnode(
     graph: Graph, object: BNode, rdf_type: URIRef | None = None
-) -> pywikibot.WbQuantity | pywikibot.WbTime | WbSource:
+) -> wikidata_typing.QuantityDataValue | wikidata_typing.TimeDataValue | WbSource:
     if not rdf_type:
         rdf_type = graph.value(object, RDF.type)  # type: ignore
     assert rdf_type is None or isinstance(rdf_type, URIRef)
 
     if rdf_type == WIKIBASE.TimeValue:
-        return _pywikibot_from_wikibase_datavalue(
-            _resolve_object_bnode_time_value(graph, object)
-        )
+        return _resolve_object_bnode_time_value(graph, object)
     elif rdf_type == WIKIBASE.QuantityValue:
-        return _pywikibot_from_wikibase_datavalue(
-            _resolve_object_bnode_quantity_value(graph, object)
-        )
+        return _resolve_object_bnode_quantity_value(graph, object)
     elif rdf_type == WIKIBASE.Reference:
         return _resolve_object_bnode_reference(graph, object)
     else:
@@ -361,12 +384,18 @@ def _resolve_object_bnode_reference(graph: Graph, object: BNode) -> WbSource:
 
     for pr_name, pr_object in _predicate_ns_objects(graph, object, PR):
         ref = get_property_page(pr_name).newClaim(is_reference=True)
-        ref.setTarget(_resolve_object(graph, pr_object))
+        target = _pywikibot_from_wikibase_datavalue(
+            _resolve_object_target(graph, pr_object)
+        )
+        ref.setTarget(target)
         source.add_reference(pr_name, ref)
 
     for prv_name, prv_object in _predicate_ns_objects(graph, object, PRV):
         ref = get_property_page(prv_name).newClaim(is_reference=True)
-        ref.setTarget(_resolve_object(graph, prv_object))
+        target = _pywikibot_from_wikibase_datavalue(
+            _resolve_object_target(graph, prv_object)
+        )
+        ref.setTarget(target)
         source.add_reference(prv_name, ref)
 
     return source
@@ -400,22 +429,20 @@ def _claim_uri(claim: pywikibot.Claim) -> str:
 def _item_append_claim_target(
     item: pywikibot.ItemPage,
     property: pywikibot.PropertyPage,
-    target: Any,
+    target: wikidata_typing.DataValue,
 ) -> tuple[bool, pywikibot.Claim]:
-    assert not isinstance(target, URIRef), f"Pass target as ItemPage: {target}"
-    assert not isinstance(target, Literal), f"Pass target as Python value: {target}"
-
     pid: str = property.id
     if pid not in item.claims:
         item.claims[pid] = []
     claims = item.claims[pid]
 
+    target_obj = _pywikibot_from_wikibase_datavalue(data=target)
     for claim in claims:
-        if claim.target_equals(target):
+        if claim.target_equals(target_obj):
             return (False, claim)
 
     new_claim: pywikibot.Claim = property.newClaim()
-    new_claim.setTarget(target)
+    new_claim.setTarget(target_obj)
     item.claims[pid].append(new_claim)
 
     return (True, new_claim)
@@ -424,22 +451,20 @@ def _item_append_claim_target(
 def _claim_append_qualifer(
     claim: pywikibot.Claim,
     property: pywikibot.PropertyPage,
-    target: Any,
+    target: wikidata_typing.DataValue,
 ) -> bool:
-    assert not isinstance(target, URIRef), f"Pass target as ItemPage: {target}"
-    assert not isinstance(target, Literal), f"Pass target as Python value: {target}"
-
     pid: str = property.id
     if pid not in claim.qualifiers:
         claim.qualifiers[pid] = []
     qualifiers = claim.qualifiers[pid]
 
+    target_obj = _pywikibot_from_wikibase_datavalue(data=target)
     for qualifier in qualifiers:
-        if qualifier.target_equals(target):
+        if qualifier.target_equals(target_obj):
             return False
 
     new_qualifier: pywikibot.Claim = property.newClaim(is_qualifier=True)
-    new_qualifier.setTarget(target)
+    new_qualifier.setTarget(target_obj)
     claim.qualifiers[pid].append(new_qualifier)
 
     return True
@@ -448,19 +473,18 @@ def _claim_append_qualifer(
 def _claim_set_qualifer(
     claim: pywikibot.Claim,
     property: pywikibot.PropertyPage,
-    target: Any,
+    target: wikidata_typing.DataValue,
 ) -> bool:
-    assert not isinstance(target, URIRef), f"Pass target as ItemPage: {target}"
-    assert not isinstance(target, Literal), f"Pass target as Python value: {target}"
+    target_obj = _pywikibot_from_wikibase_datavalue(target)
 
     pid: str = property.id
     if pid in claim.qualifiers and len(claim.qualifiers[pid]) == 1:
         qualifier: pywikibot.Claim = claim.qualifiers[pid][0]
-        if qualifier.target_equals(target):
+        if qualifier.target_equals(target_obj):
             return False
 
     new_qualifier: pywikibot.Claim = property.newClaim(is_qualifier=True)
-    new_qualifier.setTarget(target)
+    new_qualifier.setTarget(target_obj)
     claim.qualifiers[pid] = [new_qualifier]
 
     return True
@@ -508,7 +532,7 @@ def process_graph(
             wdt_property: pywikibot.PropertyPage = get_property_page(
                 predicate_local_name
             )
-            target = _resolve_object(graph, object)
+            target = _resolve_object_target(graph, object)
             did_change, claim = _item_append_claim_target(item, wdt_property, target)
             if claim.rank == "deprecated":
                 logger.warning("DeprecatedClaim <%s> already exists", _claim_uri(claim))
@@ -547,8 +571,8 @@ def process_graph(
 
         if predicate_prefix == "pq" or predicate_prefix == "pqv":
             property = get_property_page(predicate_local_name)
-            target = _resolve_object(graph, object)
-            did_change = _claim_append_qualifer(claim, property, target)
+            target2 = _resolve_object_target(graph, object)
+            did_change = _claim_append_qualifer(claim, property, target2)
             mark_changed(item, claim, did_change)
 
         elif predicate_prefix == "pqe" or predicate_prefix == "pqve":
@@ -559,13 +583,15 @@ def process_graph(
                     del claim.qualifiers[predicate_local_name]
                     mark_changed(item, claim, True)
             else:
-                target = _resolve_object(graph, object)
-                did_change = _claim_set_qualifer(claim, property, target)
+                target2 = _resolve_object_target(graph, object)
+                did_change = _claim_set_qualifer(claim, property, target2)
                 mark_changed(item, claim, did_change)
 
         elif predicate_prefix == "ps":
             property = get_property_page(predicate_local_name)
-            target = _resolve_object(graph, object)
+            target = _pywikibot_from_wikibase_datavalue(
+                _resolve_object_target(graph, object)
+            )
             assert claim.getID() == property.getID()
 
             if not claim.target_equals(target):
@@ -574,7 +600,9 @@ def process_graph(
 
         elif predicate_prefix == "psv":
             property = get_property_page(predicate_local_name)
-            target = _resolve_object(graph, object)
+            target = _pywikibot_from_wikibase_datavalue(
+                _resolve_object_target(graph, object)
+            )
             assert claim.getID() == property.getID()
 
             if not claim.target_equals(target):
