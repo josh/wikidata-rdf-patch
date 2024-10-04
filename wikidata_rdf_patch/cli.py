@@ -86,17 +86,13 @@ def main(
             logger.info("Waiting for %.1f seconds", wait_time)
             time.sleep(wait_time)
 
-        success = mediawiki_api.wbeditentity(
+        mediawiki_api.wbeditentity(
             session=session,
             qid=item.id,
             baserevid=item._revid,
             edit_data={"claims": claims},
             summary=summary,
         )
-        if not success:
-            logger.error(f"Failed to edit {item.id}")
-            exit_code = 1
-            continue
         last_edit = time.time()
 
     if session:

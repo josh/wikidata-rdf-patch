@@ -164,7 +164,6 @@ def wbeditentity(
                 params["summary"] = summary
 
             resp = _request(
-                session=session,
                 method="POST",
                 action="wbeditentity",
                 params=params,
