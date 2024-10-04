@@ -331,6 +331,7 @@ def test_update_statement_reference() -> None:
     assert len(claims) == 1
     assert claims[0]["mainsnak"]["snaktype"] == "value"
     assert claims[0]["mainsnak"]["property"] == "P4947"
+    assert claims[0]["references"][0]["snaks-order"] == ["P854", "P813"]
     assert claims[0]["references"][0]["snaks"]["P854"][0]["snaktype"] == "value"
     assert (
         claims[0]["references"][0]["snaks"]["P854"][0]["datavalue"]["type"] == "string"
