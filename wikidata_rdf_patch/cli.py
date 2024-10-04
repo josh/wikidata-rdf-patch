@@ -74,7 +74,7 @@ def main(
         blocked_qids = fetch_page_qids(title=blocklist_url)
         logger.debug("Loaded %i QIDs from blocklist", len(blocked_qids))
 
-    edits = process_graph(username=username, input=input, blocked_qids=blocked_qids)
+    edits = process_graph(input=input, blocked_qids=blocked_qids)
 
     last_edit: float = 0.0
     for item, claims, summary in edits:

@@ -21,7 +21,7 @@ def test_change_statement_rank() -> None:
         '"Changed rank"',
         ".",
     ]
-    edits = list(process_graph(username, StringIO(" ".join(triple))))
+    edits = list(process_graph(StringIO(" ".join(triple))))
     assert len(edits) == 1
     (item, claims, summary) = edits[0]
     assert item.id == "Q172241"
@@ -37,7 +37,7 @@ def test_noop_change_statement_rank() -> None:
         "wikibase:NormalRank",
         ".",
     ]
-    edits = list(process_graph(username, StringIO(" ".join(triple))))
+    edits = list(process_graph(StringIO(" ".join(triple))))
     assert len(edits) == 0
 
 
@@ -49,7 +49,7 @@ def test_add_prop_direct_value() -> None:
         "wikidatabots:editSummary",
         '"Add TMDb movie ID"' ".",
     ]
-    edits = list(process_graph(username, StringIO(" ".join(triple))))
+    edits = list(process_graph(StringIO(" ".join(triple))))
     assert len(edits) == 1
     (item, claims, summary) = edits[0]
     assert item.id == "Q172241"
@@ -63,14 +63,14 @@ def test_add_prop_direct_value() -> None:
 
 def test_noop_change_prop_direct_value() -> None:
     triple = ["wd:Q172241", "wdt:P4947", '"278"', "."]
-    edits = list(process_graph(username, StringIO(" ".join(triple))))
+    edits = list(process_graph(StringIO(" ".join(triple))))
     assert len(edits) == 0
 
 
 # TODO: This should probably add a new statement
 def test_noop_change_prop_direct_deprecated_value() -> None:
     triple = ["wd:Q1292541", "wdt:P4947", '"429486"', "."]
-    edits = list(process_graph(username, StringIO(" ".join(triple))))
+    edits = list(process_graph(StringIO(" ".join(triple))))
     assert len(edits) == 0
 
 
@@ -85,7 +85,7 @@ def test_add_prop_statement_value() -> None:
         '"123"',
         ".",
     ]
-    edits = list(process_graph(username, StringIO(" ".join(triples))))
+    edits = list(process_graph(StringIO(" ".join(triples))))
     assert len(edits) == 1
     (item, claims, summary) = edits[0]
     assert item.id == "Q172241"
@@ -104,7 +104,7 @@ def test_add_prop_qualifer() -> None:
         '"Narrator"',
         ".",
     ]
-    edits = list(process_graph(username, StringIO(" ".join(triple))))
+    edits = list(process_graph(StringIO(" ".join(triple))))
     assert len(edits) == 1
     (item, claims, summary) = edits[0]
     assert item.id == "Q172241"
@@ -129,7 +129,7 @@ def test_noop_change_prop_qualifer() -> None:
         '"Andy Dufresne"',
         ".",
     ]
-    edits = list(process_graph(username, StringIO(" ".join(triple))))
+    edits = list(process_graph(StringIO(" ".join(triple))))
     assert len(edits) == 0
 
 
@@ -137,7 +137,7 @@ def test_delete_prop_qualifer() -> None:
     triple = """
     wds:Q1292541-2203A57C-488F-4371-9F88-9A5EB91C4883 pqe:P2241 [] .
     """
-    edits = list(process_graph(username, StringIO(triple)))
+    edits = list(process_graph(StringIO(triple)))
     assert len(edits) == 1
     (item, claims, summary) = edits[0]
     assert item.id == "Q1292541"
@@ -154,7 +154,7 @@ def test_noop_change_prop_statement() -> None:
         "wd:Q48337",
         ".",
     ]
-    edits = list(process_graph(username, StringIO(" ".join(triple))))
+    edits = list(process_graph(StringIO(" ".join(triple))))
     assert len(edits) == 0
 
 
@@ -173,7 +173,7 @@ def test_add_item_prop_qualifer() -> None:
         '"Narrator"',
         ".",
     ]
-    edits = list(process_graph(username, StringIO(" ".join(triples))))
+    edits = list(process_graph(StringIO(" ".join(triples))))
     assert len(edits) == 1
     (item, claims, summary) = edits[0]
     assert item.id == "Q172241"
@@ -191,7 +191,7 @@ def test_update_item_prop_qualifer_exclusive() -> None:
     triples = """
       wd:Q172241 p:P161 [ ps:P161 wd:Q48337 ; pqe:P4633 "Narrator" ] .
     """
-    edits = list(process_graph(username, StringIO(triples)))
+    edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
     (item, claims, summary) = edits[0]
     assert item.id == "Q172241"
@@ -223,7 +223,7 @@ def test_quantity_value() -> None:
       _:b3 rdf:type wikibase:QuantityValue;
         wikibase:quantityAmount "+123"^^xsd:decimal.
     """
-    _ = list(process_graph(username, StringIO(triples)))
+    _ = list(process_graph(StringIO(triples)))
 
 
 def test_update_property_quantity_value() -> None:
@@ -234,7 +234,7 @@ def test_update_property_quantity_value() -> None:
         wikibase:quantityAmount "+5"^^xsd:decimal;
         wikibase:quantityUnit wd:Q11573.
     """
-    edits = list(process_graph(username, StringIO(triples)))
+    edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
     (item, claims, summary) = edits[0]
     assert item.id == "Q4115189"
@@ -270,7 +270,7 @@ def test_time_value() -> None:
         "2020-01-01T00:00:00Z"^^xsd:dateTime.
       wikidatabots:testSubject wikidatabots:assertValue "2020-01-01"^^xsd:date.
     """
-    _ = list(process_graph(username, StringIO(triples)))
+    _ = list(process_graph(StringIO(triples)))
 
 
 def test_reference_value() -> None:
@@ -288,7 +288,7 @@ def test_reference_value() -> None:
         wikibase:timeTimezone "0"^^xsd:integer ;
         wikibase:timeCalendarModel <http://www.wikidata.org/entity/Q1985727> .
     """
-    _ = list(process_graph(username, StringIO(triples)))
+    _ = list(process_graph(StringIO(triples)))
 
 
 def test_resolve_items() -> None:
@@ -296,14 +296,14 @@ def test_resolve_items() -> None:
       wikidatabots:testSubject wikidatabots:assertValue wd:Q42.
       wikidatabots:testSubject wikidatabots:assertValue wd:P31.
     """
-    _ = list(process_graph(username, StringIO(triples)))
+    _ = list(process_graph(StringIO(triples)))
 
 
 def test_update_property_monolingual_text_value() -> None:
     triples = """
       wd:Q4115189 wdt:P1476 "A new title"@en.
     """
-    edits = list(process_graph(username, StringIO(triples)))
+    edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
     (item, claims, summary) = edits[0]
     assert item.id == "Q4115189"

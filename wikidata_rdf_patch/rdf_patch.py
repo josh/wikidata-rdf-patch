@@ -506,7 +506,6 @@ def _claim_set_rank(claim: pywikibot.Claim, rank: URIRef) -> bool:
 
 
 def process_graph(
-    username: str,
     input: TextIO,
     blocked_qids: set[str] = set(),
 ) -> Iterator[tuple[pywikibot.ItemPage, list[wikidata_typing.Statement], str | None]]:
