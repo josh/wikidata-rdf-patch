@@ -423,7 +423,6 @@ def _item_append_claim_target(
     target: wikidata_typing.DataValue,
 ) -> tuple[bool, pywikibot.Claim]:
     assert pid.startswith("P"), pid
-    property = pywikibot.PropertyPage(SITE, pid)
 
     if pid not in item.claims:
         item.claims[pid] = []
@@ -434,7 +433,7 @@ def _item_append_claim_target(
         if claim.target_equals(target_obj):
             return (False, claim)
 
-    new_claim: pywikibot.Claim = property.newClaim()
+    new_claim = pywikibot.Claim(site=SITE, pid=pid)
     new_claim.setTarget(target_obj)
     item.claims[pid].append(new_claim)
 
@@ -457,8 +456,7 @@ def _claim_append_qualifer(
         if qualifier.target_equals(target_obj):
             return False
 
-    property = pywikibot.PropertyPage(SITE, pid)
-    new_qualifier: pywikibot.Claim = property.newClaim(is_qualifier=True)
+    new_qualifier = pywikibot.Claim(site=SITE, pid=pid, is_qualifier=True)
     new_qualifier.setTarget(target_obj)
     claim.qualifiers[pid].append(new_qualifier)
 
@@ -479,8 +477,7 @@ def _claim_set_qualifer(
         if qualifier.target_equals(target_obj):
             return False
 
-    property = pywikibot.PropertyPage(SITE, pid)
-    new_qualifier: pywikibot.Claim = property.newClaim(is_qualifier=True)
+    new_qualifier = pywikibot.Claim(site=SITE, pid=pid, is_qualifier=True)
     new_qualifier.setTarget(target_obj)
     claim.qualifiers[pid] = [new_qualifier]
 
@@ -534,11 +531,7 @@ def process_graph(
             mark_changed(item, claim, did_change)
 
         elif predicate_prefix == "p" and isinstance(object, BNode):
-            p_property: pywikibot.PropertyPage = pywikibot.PropertyPage(
-                SITE, predicate_local_name
-            )
-
-            property_claim: pywikibot.Claim = p_property.newClaim()
+            property_claim = pywikibot.Claim(site=SITE, pid=predicate_local_name)
             if predicate_local_name not in item.claims:
                 item.claims[predicate_local_name] = []
             item.claims[predicate_local_name].append(property_claim)
