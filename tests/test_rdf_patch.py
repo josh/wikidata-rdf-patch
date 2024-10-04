@@ -4,8 +4,6 @@ from typing import Any
 import wikidata_rdf_patch.rdf_patch as rdf_patch
 from wikidata_rdf_patch.rdf_patch import process_graph
 
-username = "Test"
-
 
 def setup_function(function: Any) -> None:
     rdf_patch.get_item_page.cache_clear()
@@ -205,6 +203,23 @@ def test_update_item_prop_qualifer_exclusive() -> None:
     assert claims[0]["qualifiers"]["P4633"][0]["datavalue"]["value"] == "Narrator"
 
 
+def test_update_property_monolingual_text_value() -> None:
+    triples = """
+      wd:Q4115189 wdt:P1476 "A new title"@en.
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 1
+    (item, claims, summary) = edits[0]
+    assert item.id == "Q4115189"
+    assert summary is None
+    assert len(claims) == 1
+    assert claims[0]["mainsnak"]["snaktype"] == "value"
+    assert claims[0]["mainsnak"]["property"] == "P1476"
+    assert claims[0]["mainsnak"]["datavalue"]["type"] == "monolingualtext"
+    assert claims[0]["mainsnak"]["datavalue"]["value"]["text"] == "A new title"
+    assert claims[0]["mainsnak"]["datavalue"]["value"]["language"] == "en"
+
+
 def test_quantity_value() -> None:
     triples = """
       wikidatabots:testSubject wikidatabots:assertValue _:b1.
@@ -273,47 +288,12 @@ def test_time_value() -> None:
     _ = list(process_graph(StringIO(triples)))
 
 
-def test_reference_value() -> None:
-    triples = """
-      wikidatabots:testSubject wikidatabots:assertValue _:b1.
-      _:b1 a wikibase:Reference ;
-        pr:P248 wd:Q37312 ;
-        pr:P345 "tt0111161" ;
-        pr:P813 "2021-06-23T00:00:00Z"^^xsd:dateTime ;
-        prv:P813 _:b2 .
-
-      _:b2 a wikibase:TimeValue ;
-        wikibase:timeValue "2021-06-23T00:00:00Z"^^xsd:dateTime ;
-        wikibase:timePrecision "11"^^xsd:integer ;
-        wikibase:timeTimezone "0"^^xsd:integer ;
-        wikibase:timeCalendarModel <http://www.wikidata.org/entity/Q1985727> .
-    """
-    _ = list(process_graph(StringIO(triples)))
-
-
 def test_resolve_items() -> None:
     triples = """
       wikidatabots:testSubject wikidatabots:assertValue wd:Q42.
       wikidatabots:testSubject wikidatabots:assertValue wd:P31.
     """
     _ = list(process_graph(StringIO(triples)))
-
-
-def test_update_property_monolingual_text_value() -> None:
-    triples = """
-      wd:Q4115189 wdt:P1476 "A new title"@en.
-    """
-    edits = list(process_graph(StringIO(triples)))
-    assert len(edits) == 1
-    (item, claims, summary) = edits[0]
-    assert item.id == "Q4115189"
-    assert summary is None
-    assert len(claims) == 1
-    assert claims[0]["mainsnak"]["snaktype"] == "value"
-    assert claims[0]["mainsnak"]["property"] == "P1476"
-    assert claims[0]["mainsnak"]["datavalue"]["type"] == "monolingualtext"
-    assert claims[0]["mainsnak"]["datavalue"]["value"]["text"] == "A new title"
-    assert claims[0]["mainsnak"]["datavalue"]["value"]["language"] == "en"
 
 
 def test_update_statement_reference() -> None:

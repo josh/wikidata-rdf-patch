@@ -148,19 +148,6 @@ def _predicate_ns_objects(
             yield name, object
 
 
-class WbSource:
-    _source: OrderedDict[str, list[pywikibot.Claim]]
-
-    def __init__(self) -> None:
-        self._source = OrderedDict()
-
-    def add_reference(self, pid: str, reference: pywikibot.Claim) -> None:
-        assert pid.startswith("P"), pid
-        if pid not in self._source:
-            self._source[pid] = []
-        self._source[pid].append(reference)
-
-
 def _compute_qname(uri: URIRef) -> tuple[str, str]:
     prefix, _, name = NS_MANAGER.compute_qname(uri)
     return (prefix, name)
@@ -170,6 +157,14 @@ def _compute_qname(uri: URIRef) -> tuple[str, str]:
 def get_item_page(qid: str) -> pywikibot.ItemPage:
     assert qid.startswith("Q"), qid
     return pywikibot.ItemPage(SITE, qid)
+
+
+@cache
+def get_property_datatype(pid: str) -> wikidata_typing.DataType:
+    assert pid.startswith("P"), pid
+    property = pywikibot.PropertyPage(SITE, pid)
+    data = property.get_data_for_new_entity()
+    return cast(wikidata_typing.DataType, data["datatype"])
 
 
 def _resolve_object_uriref(object: URIRef) -> wikidata_typing.WikibaseEntityIdDataValue:
@@ -267,23 +262,13 @@ def _resolve_object_literal(
         raise NotImplementedError(f"not implemented datatype: {object.datatype}")
 
 
-def _resolve_object(
-    graph: Graph, object: AnyRDFObject
-) -> wikidata_typing.DataValue | WbSource:
+def _resolve_object(graph: Graph, object: AnyRDFObject) -> wikidata_typing.DataValue:
     if isinstance(object, URIRef):
         return _resolve_object_uriref(object)
     elif isinstance(object, BNode):
         return _resolve_object_bnode(graph, object)
     elif isinstance(object, Literal):
         return _resolve_object_literal(object)
-
-
-def _resolve_object_target(
-    graph: Graph, object: AnyRDFObject
-) -> wikidata_typing.DataValue:
-    obj = _resolve_object(graph, object)
-    assert not isinstance(obj, WbSource)
-    return obj
 
 
 def _resolve_object_bnode_time_value(
@@ -358,7 +343,7 @@ def _resolve_object_bnode_quantity_value(
 
 def _resolve_object_bnode(
     graph: Graph, object: BNode, rdf_type: URIRef | None = None
-) -> wikidata_typing.QuantityDataValue | wikidata_typing.TimeDataValue | WbSource:
+) -> wikidata_typing.QuantityDataValue | wikidata_typing.TimeDataValue:
     if not rdf_type:
         rdf_type = graph.value(object, RDF.type)  # type: ignore
     assert rdf_type is None or isinstance(rdf_type, URIRef)
@@ -367,30 +352,30 @@ def _resolve_object_bnode(
         return _resolve_object_bnode_time_value(graph, object)
     elif rdf_type == WIKIBASE.QuantityValue:
         return _resolve_object_bnode_quantity_value(graph, object)
-    elif rdf_type == WIKIBASE.Reference:
-        return _resolve_object_bnode_reference(graph, object)
     else:
         raise NotImplementedError(f"Unknown bnode: {rdf_type}")
 
 
-def _resolve_object_bnode_reference(graph: Graph, object: BNode) -> WbSource:
-    source = WbSource()
+def _resolve_object_bnode_reference(
+    graph: Graph, object: BNode
+) -> OrderedDict[str, list[pywikibot.Claim]]:
+    source: OrderedDict[str, list[pywikibot.Claim]] = OrderedDict()
+
+    def add_reference(snak: wikidata_typing.Snak) -> None:
+        pid = snak["property"]
+        if pid not in source:
+            source[pid] = []
+        claim = pywikibot.Claim.fromJSON(site=SITE, data={"mainsnak": snak})
+        claim.isReference = True
+        source[pid].append(claim)
 
     for pr_name, pr_object in _predicate_ns_objects(graph, object, PR):
-        ref = pywikibot.PropertyPage(SITE, pr_name).newClaim(is_reference=True)
-        target = _pywikibot_from_wikibase_datavalue(
-            _resolve_object_target(graph, pr_object)
-        )
-        ref.setTarget(target)
-        source.add_reference(pr_name, ref)
+        target = _resolve_object(graph, pr_object)
+        add_reference(snak=_property_snakvalue(pid=pr_name, value=target))
 
     for prv_name, prv_object in _predicate_ns_objects(graph, object, PRV):
-        ref = pywikibot.PropertyPage(SITE, prv_name).newClaim(is_reference=True)
-        target = _pywikibot_from_wikibase_datavalue(
-            _resolve_object_target(graph, prv_object)
-        )
-        ref.setTarget(target)
-        source.add_reference(prv_name, ref)
+        target = _resolve_object(graph, prv_object)
+        add_reference(snak=_property_snakvalue(pid=prv_name, value=target))
 
     return source
 
@@ -412,6 +397,18 @@ def resolve_claim_guid(guid: str) -> pywikibot.Claim:
                 return claim
 
     assert False, f"Can't resolve statement GUID: {guid}"
+
+
+def _property_snakvalue(
+    pid: str, value: wikidata_typing.DataValue
+) -> wikidata_typing.SnakValue:
+    assert pid.startswith("P"), pid
+    return {
+        "snaktype": "value",
+        "property": pid,
+        "datatype": get_property_datatype(pid),
+        "datavalue": value,
+    }
 
 
 def _claim_uri(claim: pywikibot.Claim) -> str:
@@ -528,7 +525,7 @@ def process_graph(
         predicate_prefix, predicate_local_name = _compute_qname(predicate)
 
         if predicate_prefix == "wdt":
-            target = _resolve_object_target(graph, object)
+            target = _resolve_object(graph, object)
             did_change, claim = _item_append_claim_target(
                 item, predicate_local_name, target
             )
@@ -570,7 +567,7 @@ def process_graph(
         predicate_prefix, predicate_local_name = _compute_qname(predicate)
 
         if predicate_prefix == "pq" or predicate_prefix == "pqv":
-            target2 = _resolve_object_target(graph, object)
+            target2 = _resolve_object(graph, object)
             did_change = _claim_append_qualifer(claim, predicate_local_name, target2)
             mark_changed(item, claim, did_change)
 
@@ -580,14 +577,12 @@ def process_graph(
                     del claim.qualifiers[predicate_local_name]
                     mark_changed(item, claim, True)
             else:
-                target2 = _resolve_object_target(graph, object)
+                target2 = _resolve_object(graph, object)
                 did_change = _claim_set_qualifer(claim, predicate_local_name, target2)
                 mark_changed(item, claim, did_change)
 
         elif predicate_prefix == "ps":
-            target = _pywikibot_from_wikibase_datavalue(
-                _resolve_object_target(graph, object)
-            )
+            target = _pywikibot_from_wikibase_datavalue(_resolve_object(graph, object))
             assert claim.getID() == predicate_local_name
 
             if not claim.target_equals(target):
@@ -595,9 +590,7 @@ def process_graph(
                 mark_changed(item, claim)
 
         elif predicate_prefix == "psv":
-            target = _pywikibot_from_wikibase_datavalue(
-                _resolve_object_target(graph, object)
-            )
+            target = _pywikibot_from_wikibase_datavalue(_resolve_object(graph, object))
             assert claim.getID() == predicate_local_name
 
             if not claim.target_equals(target):
@@ -614,9 +607,9 @@ def process_graph(
             source = _resolve_object_bnode_reference(graph, object)
             prev_sources = claim.sources.copy()
             if predicate == PROV.wasOnlyDerivedFrom:
-                claim.sources = [source._source]
+                claim.sources = [source]
             else:
-                claim.sources.append(source._source)
+                claim.sources.append(source)
             mark_changed(item, claim, claim.sources != prev_sources)
 
         elif predicate == WIKIDATABOTS.editSummary:
