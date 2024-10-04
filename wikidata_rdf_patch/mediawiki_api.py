@@ -81,42 +81,6 @@ class Session:
     password: str
 
 
-def _session_request(
-    session: Session,
-    action: str,
-    method: Literal["GET", "POST"],
-    params: dict[str, str],
-    retries: int = 5,
-) -> dict[str, Any]:
-    while True:
-        try:
-            return _request(
-                action=action,
-                params=params,
-                method=method,
-                cookies=session.cookies,
-            )
-        except Error as e:
-            # https://www.mediawiki.org/wiki/Manual:Maxlag_parameter
-            if e.code == "maxlag" and retries > 0:
-                logger.debug("Waiting for %.1f seconds", 5)
-                time.sleep(5)
-                retries -= 1
-                continue
-            elif e.code == "badtoken" and retries > 0:
-                logger.info("csrf token expired, refreshing")
-                session.csrf_token = _token(type="csrf", cookies=session.cookies)
-                retries -= 1
-                continue
-            elif e.code == "assertbotfailed" and retries > 0:
-                logger.info("session expired, logging in again")
-                _login(session=session)
-                retries -= 1
-                continue
-            else:
-                raise e
-
-
 class LoginError(Exception):
     pass
 
@@ -181,24 +145,52 @@ def wbeditentity(
     edit_data: WikibaseEditEntityData,
     baserevid: int | None = None,
     summary: str | None = None,
-) -> bool:
+    retries: int = 5,
+) -> None:
     assert qid.startswith("Q"), "QID must start with Q"
-    params = {
-        "id": qid,
-        "token": session.csrf_token,
-        "bot": "1",
-        "assert": "bot",
-        "data": json.dumps(edit_data),
-    }
-    if baserevid:
-        params["baserevid"] = str(baserevid)
-    if summary:
-        params["summary"] = summary
-    resp = _session_request(
-        session=session,
-        method="POST",
-        action="wbeditentity",
-        params=params,
-    )
-    success: int = resp.get("success", 0)
-    return success == 1
+
+    while retries > 0:
+        try:
+            params = {
+                "id": qid,
+                "token": session.csrf_token,
+                "bot": "1",
+                "assert": "bot",
+                "data": json.dumps(edit_data),
+            }
+            if baserevid:
+                params["baserevid"] = str(baserevid)
+            if summary:
+                params["summary"] = summary
+
+            resp = _request(
+                session=session,
+                method="POST",
+                action="wbeditentity",
+                params=params,
+                cookies=session.cookies,
+            )
+
+            success: int = resp.get("success", 0)
+            if success == 1:
+                return
+            else:
+                retries -= 1
+                continue
+
+        except Error as e:
+            # https://www.mediawiki.org/wiki/Manual:Maxlag_parameter
+            if e.code == "maxlag" and retries > 0:
+                logger.debug("Waiting for %.1f seconds", 5)
+                time.sleep(5)
+                retries -= 1
+                continue
+            elif e.code == "assertbotfailed" and retries > 0:
+                logger.info("session expired, logging in again")
+                _login(session=session)
+                retries -= 1
+                continue
+            else:
+                raise e
+
+    raise Exception("out of retries")
