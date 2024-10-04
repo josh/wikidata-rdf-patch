@@ -298,3 +298,20 @@ def test_resolve_items() -> None:
       wikidatabots:testSubject wikidatabots:assertValue wd:P31.
     """
     _ = list(process_graph(username, StringIO(triples)))
+
+
+def test_update_property_monolingual_text_value() -> None:
+    triples = """
+      wd:Q4115189 wdt:P1476 "A new title"@en.
+    """
+    edits = list(process_graph(username, StringIO(triples)))
+    assert len(edits) == 1
+    (item, claims, summary) = edits[0]
+    assert item.id == "Q4115189"
+    assert summary is None
+    assert len(claims) == 1
+    assert claims[0]["mainsnak"]["snaktype"] == "value"
+    assert claims[0]["mainsnak"]["property"] == "P1476"
+    assert claims[0]["mainsnak"]["datavalue"]["type"] == "monolingualtext"
+    assert claims[0]["mainsnak"]["datavalue"]["value"]["text"] == "A new title"
+    assert claims[0]["mainsnak"]["datavalue"]["value"]["language"] == "en"

@@ -191,19 +191,51 @@ def _resolve_object_uriref(
         raise NotImplementedError(f"Unknown item: {object}")
 
 
-def _resolve_object_literal(object: Literal) -> str | pywikibot.WbTime:
-    if object.datatype is None:
-        return str(object)
-    elif object.datatype == XSD.dateTime or object.datatype == XSD.date:
-        data: wikidata_typing.TimeValue = {
-            "time": object.toPython().strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "precision": 11,
-            "after": 0,
-            "before": 0,
-            "timezone": 0,
-            "calendarmodel": "http://www.wikidata.org/entity/Q1985727",
+def _pywikibot_from_wikibase_datavalue(
+    data: wikidata_typing.DataValue,
+) -> str | pywikibot.WbMonolingualText | pywikibot.WbTime:
+    if data["type"] == "string":
+        return data["value"]
+    elif data["type"] == "monolingualtext":
+        return pywikibot.WbMonolingualText.fromWikibase(data=data["value"], site=SITE)
+    elif data["type"] == "time":
+        return pywikibot.WbTime.fromWikibase(data=data["value"], site=SITE)
+    else:
+        raise NotImplementedError(f"Unknown data type: {data['type']}")
+
+
+def _resolve_object_literal(
+    object: Literal,
+) -> (
+    wikidata_typing.MonolingualTextDataValue
+    | wikidata_typing.StringDataValue
+    | wikidata_typing.TimeDataValue
+):
+    if object.language and object.datatype is None:
+        return {
+            "type": "monolingualtext",
+            "value": {
+                "language": object.language,
+                "text": object.toPython(),
+            },
         }
-        return pywikibot.WbTime.fromWikibase(data, site=SITE)
+    elif object.language is None and object.datatype is None:
+        return {
+            "type": "string",
+            "value": object.toPython(),
+        }
+    elif object.datatype == XSD.dateTime or object.datatype == XSD.date:
+        return {
+            "type": "time",
+            "value": {
+                "time": object.toPython().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "precision": 11,
+                "after": 0,
+                "before": 0,
+                "timezone": 0,
+                "calendarmodel": "http://www.wikidata.org/entity/Q1985727",
+            },
+        }
     else:
         raise NotImplementedError(f"not implemented datatype: {object.datatype}")
 
@@ -213,8 +245,9 @@ def _resolve_object(
 ) -> (
     pywikibot.ItemPage
     | pywikibot.PropertyPage
-    | pywikibot.WbTime
+    | pywikibot.WbMonolingualText
     | pywikibot.WbQuantity
+    | pywikibot.WbTime
     | WbSource
     | str
 ):
@@ -223,7 +256,7 @@ def _resolve_object(
     elif isinstance(object, BNode):
         return _resolve_object_bnode(graph, object)
     elif isinstance(object, Literal):
-        return _resolve_object_literal(object)
+        return _pywikibot_from_wikibase_datavalue(data=_resolve_object_literal(object))
 
 
 def _resolve_object_bnode_time_value(graph: Graph, object: BNode) -> pywikibot.WbTime:
