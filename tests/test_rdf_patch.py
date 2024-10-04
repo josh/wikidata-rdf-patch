@@ -314,3 +314,34 @@ def test_update_property_monolingual_text_value() -> None:
     assert claims[0]["mainsnak"]["datavalue"]["type"] == "monolingualtext"
     assert claims[0]["mainsnak"]["datavalue"]["value"]["text"] == "A new title"
     assert claims[0]["mainsnak"]["datavalue"]["value"]["language"] == "en"
+
+
+def test_update_statement_reference() -> None:
+    triples = """
+        wds:Q172241-6B571F20-7732-47E1-86B2-1DFA6D0A15F5 prov:wasOnlyDerivedFrom [
+          pr:P854 "http://example.com";
+          pr:P813 "2024-01-01"^^xsd:date
+        ].
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 1
+    (item, claims, summary) = edits[0]
+    assert item.id == "Q172241"
+    assert summary is None
+    assert len(claims) == 1
+    assert claims[0]["mainsnak"]["snaktype"] == "value"
+    assert claims[0]["mainsnak"]["property"] == "P4947"
+    assert claims[0]["references"][0]["snaks"]["P854"][0]["snaktype"] == "value"
+    assert (
+        claims[0]["references"][0]["snaks"]["P854"][0]["datavalue"]["type"] == "string"
+    )
+    assert (
+        claims[0]["references"][0]["snaks"]["P854"][0]["datavalue"]["value"]
+        == "http://example.com"
+    )
+    assert claims[0]["references"][0]["snaks"]["P813"][0]["snaktype"] == "value"
+    assert claims[0]["references"][0]["snaks"]["P813"][0]["datavalue"]["type"] == "time"
+    assert (
+        claims[0]["references"][0]["snaks"]["P813"][0]["datavalue"]["value"]["time"]
+        == "+00000002024-01-01T00:00:00Z"
+    )
