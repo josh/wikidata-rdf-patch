@@ -200,6 +200,8 @@ def _pywikibot_from_wikibase_datavalue(
         return pywikibot.WbMonolingualText.fromWikibase(data=data["value"], site=SITE)
     elif data["type"] == "time":
         return pywikibot.WbTime.fromWikibase(data=data["value"], site=SITE)
+    elif data["type"] == "quantity":
+        return pywikibot.WbQuantity.fromWikibase(data=data["value"], site=SITE)
     else:
         raise NotImplementedError(f"Unknown data type: {data['type']}")
 
@@ -259,7 +261,9 @@ def _resolve_object(
         return _pywikibot_from_wikibase_datavalue(data=_resolve_object_literal(object))
 
 
-def _resolve_object_bnode_time_value(graph: Graph, object: BNode) -> pywikibot.WbTime:
+def _resolve_object_bnode_time_value(
+    graph: Graph, object: BNode
+) -> wikidata_typing.TimeDataValue:
     if value := graph.value(object, WIKIBASE.timeValue):
         assert isinstance(value, Literal)
         assert value.datatype is None or value.datatype == XSD.dateTime
@@ -293,12 +297,12 @@ def _resolve_object_bnode_time_value(graph: Graph, object: BNode) -> pywikibot.W
     if calendar_model:
         data["calendarmodel"] = str(calendar_model)
     assert data["time"] != "", "missing time value"
-    return pywikibot.WbTime.fromWikibase(data, site=SITE)
+    return {"type": "time", "value": data}
 
 
 def _resolve_object_bnode_quantity_value(
     graph: Graph, object: BNode
-) -> pywikibot.WbQuantity:
+) -> wikidata_typing.QuantityDataValue:
     if amount := graph.value(object, WIKIBASE.quantityAmount):
         assert isinstance(amount, Literal)
         assert amount.datatype == XSD.decimal
@@ -324,7 +328,7 @@ def _resolve_object_bnode_quantity_value(
     if unit:
         data["unit"] = str(unit)
     assert data["amount"] != "", "missing amount value"
-    return pywikibot.WbQuantity.fromWikibase(data, site=SITE)
+    return {"type": "quantity", "value": data}
 
 
 def _resolve_object_bnode(
@@ -335,9 +339,13 @@ def _resolve_object_bnode(
     assert rdf_type is None or isinstance(rdf_type, URIRef)
 
     if rdf_type == WIKIBASE.TimeValue:
-        return _resolve_object_bnode_time_value(graph, object)
+        return _pywikibot_from_wikibase_datavalue(
+            _resolve_object_bnode_time_value(graph, object)
+        )
     elif rdf_type == WIKIBASE.QuantityValue:
-        return _resolve_object_bnode_quantity_value(graph, object)
+        return _pywikibot_from_wikibase_datavalue(
+            _resolve_object_bnode_quantity_value(graph, object)
+        )
     elif rdf_type == WIKIBASE.Reference:
         return _resolve_object_bnode_reference(graph, object)
     else:
