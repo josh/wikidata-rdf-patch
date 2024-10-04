@@ -194,14 +194,18 @@ def _resolve_object_uriref(
 def _pywikibot_from_wikibase_datavalue(
     data: wikidata_typing.DataValue,
 ) -> str | pywikibot.WbMonolingualText | pywikibot.WbTime:
-    if data["type"] == "string":
-        return data["value"]
+    if data["type"] == "globecoordinate":
+        return pywikibot.Coordinate.fromWikibase(data=data["value"], site=SITE)
     elif data["type"] == "monolingualtext":
         return pywikibot.WbMonolingualText.fromWikibase(data=data["value"], site=SITE)
-    elif data["type"] == "time":
-        return pywikibot.WbTime.fromWikibase(data=data["value"], site=SITE)
     elif data["type"] == "quantity":
         return pywikibot.WbQuantity.fromWikibase(data=data["value"], site=SITE)
+    elif data["type"] == "string":
+        return data["value"]
+    elif data["type"] == "time":
+        return pywikibot.WbTime.fromWikibase(data=data["value"], site=SITE)
+    elif data["type"] == "wikibase-entityid":
+        raise NotImplementedError("Unknown data type: wikibase-entityid")
     else:
         raise NotImplementedError(f"Unknown data type: {data['type']}")
 
