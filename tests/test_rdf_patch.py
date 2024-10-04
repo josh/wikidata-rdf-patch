@@ -9,7 +9,6 @@ username = "Test"
 
 def setup_function(function: Any) -> None:
     rdf_patch.get_item_page.cache_clear()
-    rdf_patch.get_property_page.cache_clear()
     rdf_patch.resolve_claim_guid.cache_clear()
 
 

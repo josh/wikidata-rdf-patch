@@ -172,12 +172,6 @@ def get_item_page(qid: str) -> pywikibot.ItemPage:
     return pywikibot.ItemPage(SITE, qid)
 
 
-@cache
-def get_property_page(pid: str) -> pywikibot.PropertyPage:
-    assert pid.startswith("P"), pid
-    return pywikibot.PropertyPage(SITE, pid)
-
-
 def _resolve_object_uriref(object: URIRef) -> wikidata_typing.WikibaseEntityIdDataValue:
     prefix, local_name = _compute_qname(object)
     assert prefix == "wd"
@@ -228,7 +222,7 @@ def _pywikibot_from_wikibase_datavalue(
         if data["value"]["entity-type"] == "item":
             return get_item_page(data["value"]["id"])
         elif data["value"]["entity-type"] == "property":
-            return get_property_page(data["value"]["id"])
+            return pywikibot.PropertyPage(SITE, data["value"]["id"])
         else:
             raise NotImplementedError(
                 f"Unknown entity-type: {data['value']['entity-type']}"
@@ -383,7 +377,7 @@ def _resolve_object_bnode_reference(graph: Graph, object: BNode) -> WbSource:
     source = WbSource()
 
     for pr_name, pr_object in _predicate_ns_objects(graph, object, PR):
-        ref = get_property_page(pr_name).newClaim(is_reference=True)
+        ref = pywikibot.PropertyPage(SITE, pr_name).newClaim(is_reference=True)
         target = _pywikibot_from_wikibase_datavalue(
             _resolve_object_target(graph, pr_object)
         )
@@ -391,7 +385,7 @@ def _resolve_object_bnode_reference(graph: Graph, object: BNode) -> WbSource:
         source.add_reference(pr_name, ref)
 
     for prv_name, prv_object in _predicate_ns_objects(graph, object, PRV):
-        ref = get_property_page(prv_name).newClaim(is_reference=True)
+        ref = pywikibot.PropertyPage(SITE, prv_name).newClaim(is_reference=True)
         target = _pywikibot_from_wikibase_datavalue(
             _resolve_object_target(graph, prv_object)
         )
@@ -428,10 +422,12 @@ def _claim_uri(claim: pywikibot.Claim) -> str:
 
 def _item_append_claim_target(
     item: pywikibot.ItemPage,
-    property: pywikibot.PropertyPage,
+    pid: str,
     target: wikidata_typing.DataValue,
 ) -> tuple[bool, pywikibot.Claim]:
-    pid: str = property.id
+    assert pid.startswith("P"), pid
+    property = pywikibot.PropertyPage(SITE, pid)
+
     if pid not in item.claims:
         item.claims[pid] = []
     claims = item.claims[pid]
@@ -450,10 +446,11 @@ def _item_append_claim_target(
 
 def _claim_append_qualifer(
     claim: pywikibot.Claim,
-    property: pywikibot.PropertyPage,
+    pid: str,
     target: wikidata_typing.DataValue,
 ) -> bool:
-    pid: str = property.id
+    assert pid.startswith("P"), pid
+
     if pid not in claim.qualifiers:
         claim.qualifiers[pid] = []
     qualifiers = claim.qualifiers[pid]
@@ -463,6 +460,7 @@ def _claim_append_qualifer(
         if qualifier.target_equals(target_obj):
             return False
 
+    property = pywikibot.PropertyPage(SITE, pid)
     new_qualifier: pywikibot.Claim = property.newClaim(is_qualifier=True)
     new_qualifier.setTarget(target_obj)
     claim.qualifiers[pid].append(new_qualifier)
@@ -472,17 +470,19 @@ def _claim_append_qualifer(
 
 def _claim_set_qualifer(
     claim: pywikibot.Claim,
-    property: pywikibot.PropertyPage,
+    pid: str,
     target: wikidata_typing.DataValue,
 ) -> bool:
+    assert pid.startswith("P"), pid
+
     target_obj = _pywikibot_from_wikibase_datavalue(target)
 
-    pid: str = property.id
     if pid in claim.qualifiers and len(claim.qualifiers[pid]) == 1:
         qualifier: pywikibot.Claim = claim.qualifiers[pid][0]
         if qualifier.target_equals(target_obj):
             return False
 
+    property = pywikibot.PropertyPage(SITE, pid)
     new_qualifier: pywikibot.Claim = property.newClaim(is_qualifier=True)
     new_qualifier.setTarget(target_obj)
     claim.qualifiers[pid] = [new_qualifier]
@@ -529,17 +529,18 @@ def process_graph(
         predicate_prefix, predicate_local_name = _compute_qname(predicate)
 
         if predicate_prefix == "wdt":
-            wdt_property: pywikibot.PropertyPage = get_property_page(
-                predicate_local_name
-            )
             target = _resolve_object_target(graph, object)
-            did_change, claim = _item_append_claim_target(item, wdt_property, target)
+            did_change, claim = _item_append_claim_target(
+                item, predicate_local_name, target
+            )
             if claim.rank == "deprecated":
                 logger.warning("DeprecatedClaim <%s> already exists", _claim_uri(claim))
             mark_changed(item, claim, did_change)
 
         elif predicate_prefix == "p" and isinstance(object, BNode):
-            p_property: pywikibot.PropertyPage = get_property_page(predicate_local_name)
+            p_property: pywikibot.PropertyPage = pywikibot.PropertyPage(
+                SITE, predicate_local_name
+            )
 
             property_claim: pywikibot.Claim = p_property.newClaim()
             if predicate_local_name not in item.claims:
@@ -570,40 +571,35 @@ def process_graph(
         predicate_prefix, predicate_local_name = _compute_qname(predicate)
 
         if predicate_prefix == "pq" or predicate_prefix == "pqv":
-            property = get_property_page(predicate_local_name)
             target2 = _resolve_object_target(graph, object)
-            did_change = _claim_append_qualifer(claim, property, target2)
+            did_change = _claim_append_qualifer(claim, predicate_local_name, target2)
             mark_changed(item, claim, did_change)
 
         elif predicate_prefix == "pqe" or predicate_prefix == "pqve":
-            property = get_property_page(predicate_local_name)
-
             if _graph_empty_node(graph, object):
                 if predicate_local_name in claim.qualifiers:
                     del claim.qualifiers[predicate_local_name]
                     mark_changed(item, claim, True)
             else:
                 target2 = _resolve_object_target(graph, object)
-                did_change = _claim_set_qualifer(claim, property, target2)
+                did_change = _claim_set_qualifer(claim, predicate_local_name, target2)
                 mark_changed(item, claim, did_change)
 
         elif predicate_prefix == "ps":
-            property = get_property_page(predicate_local_name)
             target = _pywikibot_from_wikibase_datavalue(
                 _resolve_object_target(graph, object)
             )
-            assert claim.getID() == property.getID()
+            assert claim.getID() == predicate_local_name
 
             if not claim.target_equals(target):
                 claim.setTarget(target)
                 mark_changed(item, claim)
 
         elif predicate_prefix == "psv":
-            property = get_property_page(predicate_local_name)
             target = _pywikibot_from_wikibase_datavalue(
                 _resolve_object_target(graph, object)
             )
-            assert claim.getID() == property.getID()
+            assert claim.getID() == predicate_local_name
 
             if not claim.target_equals(target):
                 claim.setTarget(target)
