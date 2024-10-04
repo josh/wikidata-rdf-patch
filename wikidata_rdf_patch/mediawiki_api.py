@@ -103,7 +103,7 @@ def _login(session: Session) -> None:
     if result == "Success":
         session.csrf_token = _token(type="csrf", cookies=session.cookies)
     else:
-        raise LoginError()
+        raise LoginError(resp["login"]["reason"])
 
 
 # https://www.wikidata.org/w/api.php?action=help&modules=login
