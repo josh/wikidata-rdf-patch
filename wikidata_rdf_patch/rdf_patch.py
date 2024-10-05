@@ -465,20 +465,30 @@ def _claim_set_target(
     target: wikidata_typing.DataValue,
 ) -> bool:
     claim_json = _pywikibot_claim_to_json(claim)
-    if claim_json["mainsnak"]["snaktype"] == "value" and _datavalue_equal(
-        claim_json["mainsnak"]["datavalue"], target
-    ):
+    snak = _property_snakvalue(pid=claim.getID(), value=target)
+
+    if _snak_equals(claim_json["mainsnak"], snak):
         return False
 
-    snak = _property_snakvalue(pid=claim.getID(), value=target)
     new_claim = _pywikibot_claim_from_json(snak)
     claim.setTarget(new_claim.target)
 
     return True
 
 
-def _datavalue_equal(
-    a: wikidata_typing.DataValue, b: wikidata_typing.DataValue
+def _snak_equals(
+    a: wikidata_typing.Snak,
+    b: wikidata_typing.Snak,
+) -> bool:
+    if a["snaktype"] == "value" and b["snaktype"] == "value":
+        return _datavalue_equals(a["datavalue"], b["datavalue"])
+    else:
+        return a == b
+
+
+def _datavalue_equals(
+    a: wikidata_typing.DataValue,
+    b: wikidata_typing.DataValue,
 ) -> bool:
     if a["type"] == "wikibase-entityid" and b["type"] == "wikibase-entityid":
         if a["value"]["entity-type"] != b["value"]["entity-type"]:
@@ -504,14 +514,13 @@ def _claim_append_qualifer(
         claim.qualifiers[pid] = []
     qualifiers = claim.qualifiers[pid]
 
+    snak = _property_snakvalue(pid=pid, value=target)
+
     for qualifier in qualifiers:
         qualifier_json = _pywikibot_qualifier_to_json(qualifier)
-        if qualifier_json["snaktype"] == "value" and _datavalue_equal(
-            qualifier_json["datavalue"], target
-        ):
+        if _snak_equals(qualifier_json, snak):
             return False
 
-    snak = _property_snakvalue(pid=pid, value=target)
     new_qualifier = _pywikibot_qualifier_from_json(snak)
     claim.qualifiers[pid].append(new_qualifier)
 
@@ -525,15 +534,14 @@ def _claim_set_qualifer(
 ) -> bool:
     assert pid.startswith("P"), pid
 
+    snak = _property_snakvalue(pid=pid, value=target)
+
     if pid in claim.qualifiers and len(claim.qualifiers[pid]) == 1:
         qualifier: pywikibot.Claim = claim.qualifiers[pid][0]
         qualifier_json = _pywikibot_qualifier_to_json(qualifier)
-        if qualifier_json["snaktype"] == "value" and _datavalue_equal(
-            qualifier_json["datavalue"], target
-        ):
+        if _snak_equals(qualifier_json, snak):
             return False
 
-    snak = _property_snakvalue(pid=pid, value=target)
     new_qualifier = pywikibot.Claim.fromJSON(site=SITE, data={"mainsnak": snak})
     new_qualifier.isQualifier = True
     claim.qualifiers[pid] = [new_qualifier]
