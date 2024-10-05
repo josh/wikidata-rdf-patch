@@ -2,6 +2,33 @@ from typing import Literal, TypedDict, Union
 
 from typing_extensions import Required
 
+# https://josh.github.io/wikidata-api-schemas/entity.schema.json
+Entity = Union["Item", "Property"]
+
+
+# https://josh.github.io/wikidata-api-schemas/item.schema.json
+class Item(TypedDict, total=False):
+    type: Required[Literal["item"]]
+    id: Required[str]
+    title: Required[str]
+    labels: "Labels"
+    descriptions: "Descriptions"
+    aliases: "Aliases"
+    claims: dict[str, list["Statement"]]
+
+
+# https://josh.github.io/wikidata-api-schemas/property.schema.json
+class Property(TypedDict, total=False):
+    type: Required[Literal["property"]]
+    id: Required[str]
+    title: Required[str]
+    labels: "Labels"
+    descriptions: "Descriptions"
+    aliases: "Aliases"
+    datatype: Required["DataType"]
+    claims: dict[str, list["Statement"]]
+
+
 # https://josh.github.io/wikidata-api-schemas/multilingual-text-value.schema.json#/$defs/values
 Labels = dict[str, "MultilingualTextValue"]
 

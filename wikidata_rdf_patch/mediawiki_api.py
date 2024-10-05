@@ -9,6 +9,7 @@ from typing import Any, Literal, TypedDict
 
 from wikidata_rdf_patch.wikidata_typing import (
     Descriptions,
+    Entity,
     Labels,
     Statement,
 )
@@ -220,3 +221,16 @@ def wbeditentity(
                 raise e
 
     raise Exception("out of retries")
+
+
+def wbgetentities(ids: list[str], user_agent: str) -> dict[str, Entity]:
+    resp = _request(
+        method="GET",
+        action="wbgetentities",
+        params={"ids": "|".join(ids)},
+        cookies=http.cookiejar.CookieJar(),
+        user_agent=user_agent,
+    )
+    assert resp.get("success") == 1, "wbgetentities failed"
+    entities: dict[str, Entity] = resp["entities"]
+    return entities

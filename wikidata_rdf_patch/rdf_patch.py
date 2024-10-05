@@ -13,7 +13,7 @@ from rdflib import XSD, Graph
 from rdflib.namespace import Namespace, NamespaceManager
 from rdflib.term import BNode, Literal, URIRef
 
-from . import wikidata_typing
+from . import mediawiki_api, wikidata_typing
 
 logger = logging.getLogger("rdf_patch")
 
@@ -162,9 +162,15 @@ def get_item_page(qid: str) -> pywikibot.ItemPage:
 @cache
 def get_property_datatype(pid: str) -> wikidata_typing.DataType:
     assert pid.startswith("P"), pid
-    property = pywikibot.PropertyPage(SITE, pid)
-    data = property.get_data_for_new_entity()
-    return cast(wikidata_typing.DataType, data["datatype"])
+    entities = mediawiki_api.wbgetentities(
+        # TODO: Would be better to prefetch all properties upfront
+        ids=[pid],
+        # TODO: Get user agent from cli somehow
+        user_agent=mediawiki_api.DEFAULT_USER_AGENT,
+    )
+    entity = entities[pid]
+    assert entity["type"] == "property"
+    return entity["datatype"]
 
 
 def _resolve_object_uriref(object: URIRef) -> wikidata_typing.WikibaseEntityIdDataValue:
