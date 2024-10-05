@@ -695,8 +695,9 @@ def process_graph(
 
         elif subject == WIKIDATABOTS.testSubject:
             assert isinstance(subject, URIRef)
-            for object in graph.objects(subject, WIKIDATABOTS.assertValue):  # type: ignore
-                assert _resolve_object(graph, object)
+            for rdf_object in graph.objects(subject, WIKIDATABOTS.assertValue):
+                assert isinstance(rdf_object, AnyRDFObject)
+                assert _resolve_object(graph, rdf_object)
 
         else:
             logger.error("NotImplemented: Unknown subject: %s", subject)
