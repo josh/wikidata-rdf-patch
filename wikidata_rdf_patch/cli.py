@@ -38,6 +38,12 @@ logger = logging.getLogger("wikidata-rdf-patch")
     help="Wikidata blocklist page URL",
 )
 @click.option(
+    "--user-agent",
+    envvar="WIKIDATA_USER_AGENT",
+    default=mediawiki_api.DEFAULT_USER_AGENT,
+    help="User-Agent header",
+)
+@click.option(
     "--min-time-between-edits",
     envvar="WIKIDATA_MIN_TIME_BETWEEN_EDITS",
     type=int,
@@ -52,6 +58,7 @@ def main(
     password: str,
     dry_run: bool,
     blocklist_url: str,
+    user_agent: str,
     min_time_between_edits: int,
     verbose: bool,
 ) -> None:
@@ -62,7 +69,11 @@ def main(
 
     session: mediawiki_api.Session | None = None
     if not dry_run:
-        session = mediawiki_api.login(username, password)
+        session = mediawiki_api.login(
+            username=username,
+            password=password,
+            user_agent=user_agent,
+        )
 
     blocked_qids: set[str] = set()
     if blocklist_url.startswith("https://www.wikidata.org/wiki/"):

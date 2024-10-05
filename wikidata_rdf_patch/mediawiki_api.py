@@ -15,6 +15,10 @@ from wikidata_rdf_patch.wikidata_typing import (
 
 logger = logging.getLogger("mediawiki-api")
 
+DEFAULT_USER_AGENT = (
+    "wikidata-rdf-patch/1.0 (https://github.com/josh/wikidata-rdf-patch)"
+)
+
 
 class Error(Exception):
     code: str
@@ -32,9 +36,12 @@ def _request(
     method: Literal["GET", "POST"],
     params: dict[str, str],
     cookies: http.cookiejar.CookieJar,
+    user_agent: str,
 ) -> dict[str, Any]:
     url = "https://www.wikidata.org/w/api.php"
-    headers: dict[str, str] = {}
+    headers: dict[str, str] = {
+        "User-Agent": user_agent,
+    }
     params["action"] = action
     params["format"] = "json"
     params["maxlag"] = "5"
@@ -64,9 +71,19 @@ def _request(
 
 
 # https://www.wikidata.org/w/api.php?action=help&modules=query%2Btokens
-def _token(type: Literal["login", "csrf"], cookies: http.cookiejar.CookieJar) -> str:
+def _token(
+    type: Literal["login", "csrf"],
+    cookies: http.cookiejar.CookieJar,
+    user_agent: str,
+) -> str:
     params = {"meta": "tokens", "type": type}
-    resp = _request(method="GET", action="query", params=params, cookies=cookies)
+    resp = _request(
+        method="GET",
+        action="query",
+        params=params,
+        cookies=cookies,
+        user_agent=user_agent,
+    )
     token = resp["query"]["tokens"][f"{type}token"]
     assert isinstance(token, str)
     return token
@@ -75,6 +92,7 @@ def _token(type: Literal["login", "csrf"], cookies: http.cookiejar.CookieJar) ->
 @dataclass
 class Session:
     cookies: http.cookiejar.CookieJar
+    user_agent: str
     csrf_token: str
     login_token: str
     username: str
@@ -87,7 +105,11 @@ class LoginError(Exception):
 
 # https://www.wikidata.org/w/api.php?action=help&modules=login
 def _login(session: Session) -> None:
-    session.login_token = _token(type="login", cookies=session.cookies)
+    session.login_token = _token(
+        type="login",
+        cookies=session.cookies,
+        user_agent=session.user_agent,
+    )
     params = {
         "lgname": session.username,
         "lgpassword": session.password,
@@ -98,22 +120,28 @@ def _login(session: Session) -> None:
         action="login",
         params=params,
         cookies=session.cookies,
+        user_agent=session.user_agent,
     )
     result: str = resp["login"]["result"]
     if result == "Success":
-        session.csrf_token = _token(type="csrf", cookies=session.cookies)
+        session.csrf_token = _token(
+            type="csrf",
+            cookies=session.cookies,
+            user_agent=session.user_agent,
+        )
     else:
         raise LoginError(resp["login"]["reason"])
 
 
 # https://www.wikidata.org/w/api.php?action=help&modules=login
-def login(username: str, password: str) -> Session:
+def login(username: str, password: str, user_agent: str) -> Session:
     session = Session(
         cookies=http.cookiejar.CookieJar(),
         csrf_token="",
         login_token="",
         username=username,
         password=password,
+        user_agent=user_agent,
     )
     _login(session=session)
     return session
@@ -127,6 +155,7 @@ def logout(session: Session) -> None:
         action="logout",
         params=params,
         cookies=session.cookies,
+        user_agent=session.user_agent,
     )
     return None
 
@@ -168,6 +197,7 @@ def wbeditentity(
                 action="wbeditentity",
                 params=params,
                 cookies=session.cookies,
+                user_agent=session.user_agent,
             )
 
             success: int = resp.get("success", 0)
