@@ -9,8 +9,9 @@ Entity = Union["Item", "Property"]
 # https://josh.github.io/wikidata-api-schemas/item.schema.json
 class Item(TypedDict, total=False):
     type: Required[Literal["item"]]
-    id: Required[str]
     title: Required[str]
+    lastrevid: Required[int]
+    id: Required[str]
     labels: "Labels"
     descriptions: "Descriptions"
     aliases: "Aliases"
@@ -20,8 +21,9 @@ class Item(TypedDict, total=False):
 # https://josh.github.io/wikidata-api-schemas/property.schema.json
 class Property(TypedDict, total=False):
     type: Required[Literal["property"]]
-    id: Required[str]
     title: Required[str]
+    lastrevid: Required[int]
+    id: Required[str]
     labels: "Labels"
     descriptions: "Descriptions"
     aliases: "Aliases"

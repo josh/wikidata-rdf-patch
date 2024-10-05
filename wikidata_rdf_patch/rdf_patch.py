@@ -573,7 +573,7 @@ def _claim_set_rank(claim: pywikibot.Claim, rank: URIRef) -> bool:
 def process_graph(
     input: TextIO,
     blocked_qids: set[str] = set(),
-) -> Iterator[tuple[pywikibot.ItemPage, list[wikidata_typing.Statement], str | None]]:
+) -> Iterator[tuple[wikidata_typing.Item, list[wikidata_typing.Statement], str | None]]:
     graph = Graph()
     data = PREFIXES + input.read()
     graph.parse(data=data)
@@ -723,7 +723,10 @@ def process_graph(
             logger.info(" ⮑ %s / %s", statement_id, statement_snak)
 
         assert len(statements) > 0, "No claims to save"
-        yield (item, statements, summary)
+        itemJSON: wikidata_typing.Item = item.toJSON()
+        itemJSON["id"] = item.id
+        itemJSON["lastrevid"] = item.latest_revision_id
+        yield (itemJSON, statements, summary)
 
 
 def fetch_page_qids(title: str) -> set[str]:

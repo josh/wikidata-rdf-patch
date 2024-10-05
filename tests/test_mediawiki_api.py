@@ -29,7 +29,9 @@ def test_wbgetentities_property() -> None:
     )
     assert "P31" in entities
     assert entities["P31"]["type"] == "property"
+    assert entities["P31"]["id"] == "P31"
     assert entities["P31"]["title"] == "Property:P31"
+    assert entities["P31"]["lastrevid"] > 0
     assert entities["P31"]["datatype"] == "wikibase-item"
 
 
@@ -40,7 +42,9 @@ def test_wbgetentities_item() -> None:
     )
     assert "Q42" in entities
     assert entities["Q42"]["type"] == "item"
+    assert entities["Q42"]["id"] == "Q42"
     assert entities["Q42"]["title"] == "Q42"
+    assert entities["Q42"]["lastrevid"] > 0
     assert entities["Q42"]["claims"]["P31"][0]["mainsnak"]["snaktype"] == "value"
     assert (
         entities["Q42"]["claims"]["P31"][0]["mainsnak"]["datatype"] == "wikibase-item"

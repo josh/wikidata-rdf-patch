@@ -99,8 +99,8 @@ def main(
 
         mediawiki_api.wbeditentity(
             session=session,
-            qid=item.id,
-            baserevid=item._revid,
+            qid=item["id"],
+            baserevid=item["lastrevid"],
             edit_data={"claims": claims},
             summary=summary,
         )

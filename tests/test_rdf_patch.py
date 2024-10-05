@@ -22,7 +22,8 @@ def test_change_statement_rank() -> None:
     edits = list(process_graph(StringIO(" ".join(triple))))
     assert len(edits) == 1
     (item, claims, summary) = edits[0]
-    assert item.id == "Q172241"
+    assert item["id"] == "Q172241"
+    assert item["lastrevid"] > 0
     assert summary == "Changed rank"
     assert len(claims) == 1
     assert claims[0]["rank"] == "deprecated"
@@ -50,7 +51,7 @@ def test_add_prop_direct_value() -> None:
     edits = list(process_graph(StringIO(" ".join(triple))))
     assert len(edits) == 1
     (item, claims, summary) = edits[0]
-    assert item.id == "Q172241"
+    assert item["id"] == "Q172241"
     assert summary == "Add TMDb movie ID"
     assert len(claims) == 1
     assert claims[0]["mainsnak"]["snaktype"] == "value"
@@ -86,7 +87,7 @@ def test_add_prop_statement_value() -> None:
     edits = list(process_graph(StringIO(" ".join(triples))))
     assert len(edits) == 1
     (item, claims, summary) = edits[0]
-    assert item.id == "Q172241"
+    assert item["id"] == "Q172241"
     assert summary is None
     assert len(claims) == 1
     assert claims[0]["mainsnak"]["snaktype"] == "value"
@@ -105,7 +106,7 @@ def test_add_prop_qualifer() -> None:
     edits = list(process_graph(StringIO(" ".join(triple))))
     assert len(edits) == 1
     (item, claims, summary) = edits[0]
-    assert item.id == "Q172241"
+    assert item["id"] == "Q172241"
     assert summary is None
     assert len(claims) == 1
     assert claims[0]["mainsnak"]["property"] == "P161"
@@ -138,7 +139,7 @@ def test_delete_prop_qualifer() -> None:
     edits = list(process_graph(StringIO(triple)))
     assert len(edits) == 1
     (item, claims, summary) = edits[0]
-    assert item.id == "Q1292541"
+    assert item["id"] == "Q1292541"
     assert summary is None
     assert len(claims) == 1
     assert claims[0]["mainsnak"]["property"] == "P4947"
@@ -174,7 +175,7 @@ def test_add_item_prop_qualifer() -> None:
     edits = list(process_graph(StringIO(" ".join(triples))))
     assert len(edits) == 1
     (item, claims, summary) = edits[0]
-    assert item.id == "Q172241"
+    assert item["id"] == "Q172241"
     assert summary is None
     assert len(claims) == 1
     assert claims[0]["mainsnak"]["snaktype"] == "value"
@@ -192,7 +193,7 @@ def test_update_item_prop_qualifer_exclusive() -> None:
     edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
     (item, claims, summary) = edits[0]
-    assert item.id == "Q172241"
+    assert item["id"] == "Q172241"
     assert summary is None
     assert len(claims) == 1
     assert claims[0]["mainsnak"]["snaktype"] == "value"
@@ -210,7 +211,7 @@ def test_update_property_monolingual_text_value() -> None:
     edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
     (item, claims, summary) = edits[0]
-    assert item.id == "Q4115189"
+    assert item["id"] == "Q4115189"
     assert summary is None
     assert len(claims) == 1
     assert claims[0]["mainsnak"]["snaktype"] == "value"
@@ -252,7 +253,7 @@ def test_update_property_quantity_value() -> None:
     edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
     (item, claims, summary) = edits[0]
-    assert item.id == "Q4115189"
+    assert item["id"] == "Q4115189"
     assert summary is None
     assert len(claims) == 1
     assert claims[0]["mainsnak"]["snaktype"] == "value"
@@ -306,7 +307,7 @@ def test_update_statement_reference() -> None:
     edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
     (item, claims, summary) = edits[0]
-    assert item.id == "Q172241"
+    assert item["id"] == "Q172241"
     assert summary is None
     assert len(claims) == 1
     assert claims[0]["mainsnak"]["snaktype"] == "value"
