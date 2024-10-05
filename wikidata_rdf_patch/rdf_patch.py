@@ -5,6 +5,7 @@ import re
 import urllib.request
 from collections import OrderedDict, defaultdict
 from collections.abc import Iterator
+from dataclasses import dataclass
 from functools import cache
 from typing import Any, TextIO, cast
 
@@ -570,6 +571,11 @@ def _claim_set_rank(claim: pywikibot.Claim, rank: URIRef) -> bool:
     return True
 
 
+@dataclass
+class ProcessState:
+    edit_summaries: dict[str, str]
+
+
 def process_graph(
     input: TextIO,
     blocked_qids: set[str] = set(),
@@ -578,8 +584,11 @@ def process_graph(
     data = PREFIXES + input.read()
     graph.parse(data=data)
 
+    state = ProcessState(
+        edit_summaries={},
+    )
+
     changed_claims: dict[pywikibot.ItemPage, set[HashableClaim]] = defaultdict(set)
-    edit_summaries: dict[pywikibot.ItemPage, str] = {}
 
     def mark_changed(
         item: pywikibot.ItemPage, claim: pywikibot.Claim, did_change: bool = True
@@ -612,7 +621,7 @@ def process_graph(
                 visit_wds_subject(item, property_claim, predicate, p_object)
 
         elif predicate == WIKIDATABOTS.editSummary:
-            edit_summaries[item] = object.toPython()
+            state.edit_summaries[item.id] = object.toPython()
 
         else:
             logger.error(
@@ -673,7 +682,7 @@ def process_graph(
             mark_changed(item, claim, claim.sources != prev_sources)
 
         elif predicate == WIKIDATABOTS.editSummary:
-            edit_summaries[item] = object.toPython()
+            state.edit_summaries[item.id] = object.toPython()
 
         else:
             logger.error("NotImplemented: Unknown wds triple: %s %s", predicate, object)
@@ -713,7 +722,7 @@ def process_graph(
             logger.warning("Skipping edit, %s is blocked", item.id)
             continue
 
-        summary: str | None = edit_summaries.get(item)
+        summary: str | None = state.edit_summaries.get(item.id)
         logger.info("Edit %s: %s", item.id, summary or "(no summary)")
 
         statements = [_pywikibot_claim_to_json(hclaim.claim) for hclaim in hclaims]
