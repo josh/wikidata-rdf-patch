@@ -286,15 +286,6 @@ def _resolve_object_literal(
         raise NotImplementedError(f"not implemented datatype: {object.datatype}")
 
 
-def _resolve_object(graph: Graph, object: AnyRDFObject) -> wikidata_typing.DataValue:
-    if isinstance(object, URIRef):
-        return _resolve_object_uriref(object)
-    elif isinstance(object, BNode):
-        return _resolve_object_bnode(graph, object)
-    elif isinstance(object, Literal):
-        return _resolve_object_literal(object)
-
-
 def _resolve_object_bnode_time_value(
     graph: Graph, object: BNode
 ) -> wikidata_typing.TimeDataValue:
@@ -380,6 +371,27 @@ def _resolve_object_bnode(
         raise NotImplementedError(f"Unknown bnode: {rdf_type}")
 
 
+def _resolve_object(graph: Graph, object: AnyRDFObject) -> wikidata_typing.DataValue:
+    if isinstance(object, URIRef):
+        return _resolve_object_uriref(object)
+    elif isinstance(object, BNode):
+        return _resolve_object_bnode(graph, object)
+    elif isinstance(object, Literal):
+        return _resolve_object_literal(object)
+
+
+def _property_snakvalue(
+    pid: str, value: wikidata_typing.DataValue
+) -> wikidata_typing.SnakValue:
+    assert pid.startswith("P"), pid
+    return {
+        "snaktype": "value",
+        "property": pid,
+        "datatype": get_property_datatype(pid),
+        "datavalue": value,
+    }
+
+
 def _resolve_object_bnode_reference(
     graph: Graph, object: BNode
 ) -> OrderedDict[str, list[pywikibot.Claim]]:
@@ -422,18 +434,6 @@ def resolve_claim_guid(guid: str) -> pywikibot.Claim:
     assert False, f"Can't resolve statement GUID: {guid}"
 
 
-def _property_snakvalue(
-    pid: str, value: wikidata_typing.DataValue
-) -> wikidata_typing.SnakValue:
-    assert pid.startswith("P"), pid
-    return {
-        "snaktype": "value",
-        "property": pid,
-        "datatype": get_property_datatype(pid),
-        "datavalue": value,
-    }
-
-
 def _claim_uri(claim: pywikibot.Claim) -> str:
     snak: str = claim.snak
     guid = snak.replace("$", "-")
@@ -466,32 +466,6 @@ def _item_append_claim_target(
     return (True, new_claim)
 
 
-def _claim_set_target(
-    claim: pywikibot.Claim,
-    target: wikidata_typing.DataValue,
-) -> bool:
-    claim_json = _pywikibot_claim_to_json(claim)
-    snak = _property_snakvalue(pid=claim.getID(), value=target)
-
-    if _snak_equals(claim_json["mainsnak"], snak):
-        return False
-
-    new_claim = _pywikibot_claim_from_json(snak)
-    claim.setTarget(new_claim.target)
-
-    return True
-
-
-def _snak_equals(
-    a: wikidata_typing.Snak,
-    b: wikidata_typing.Snak,
-) -> bool:
-    if a["snaktype"] == "value" and b["snaktype"] == "value":
-        return _datavalue_equals(a["datavalue"], b["datavalue"])
-    else:
-        return a == b
-
-
 def _datavalue_equals(
     a: wikidata_typing.DataValue,
     b: wikidata_typing.DataValue,
@@ -507,6 +481,32 @@ def _datavalue_equals(
             return False
     else:
         return a == b
+
+
+def _snak_equals(
+    a: wikidata_typing.Snak,
+    b: wikidata_typing.Snak,
+) -> bool:
+    if a["snaktype"] == "value" and b["snaktype"] == "value":
+        return _datavalue_equals(a["datavalue"], b["datavalue"])
+    else:
+        return a == b
+
+
+def _claim_set_target(
+    claim: pywikibot.Claim,
+    target: wikidata_typing.DataValue,
+) -> bool:
+    claim_json = _pywikibot_claim_to_json(claim)
+    snak = _property_snakvalue(pid=claim.getID(), value=target)
+
+    if _snak_equals(claim_json["mainsnak"], snak):
+        return False
+
+    new_claim = _pywikibot_claim_from_json(snak)
+    claim.setTarget(new_claim.target)
+
+    return True
 
 
 def _claim_append_qualifer(
