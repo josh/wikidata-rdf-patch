@@ -179,12 +179,12 @@ def wbeditentity(
         except Error as e:
             # https://www.mediawiki.org/wiki/Manual:Maxlag_parameter
             if e.code == "maxlag" and retries > 0:
-                logger.debug("Waiting for %.1f seconds", 5)
+                logger.warning("Waiting for %.1f seconds", 5)
                 time.sleep(5)
                 retries -= 1
                 continue
             elif e.code == "assertbotfailed" and retries > 0:
-                logger.info("session expired, logging in again")
+                logger.warning("session expired, logging in again")
                 _login(session=session)
                 retries -= 1
                 continue

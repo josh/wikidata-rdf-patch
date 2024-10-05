@@ -69,10 +69,10 @@ def main(
         blocked_qids = fetch_page_qids(
             title=blocklist_url.removeprefix("https://www.wikidata.org/wiki/")
         )
-        logger.debug("Loaded %i QIDs from blocklist", len(blocked_qids))
+        logger.info("Loaded %i QIDs from blocklist", len(blocked_qids))
     elif not blocklist_url.startswith("http"):
         blocked_qids = fetch_page_qids(title=blocklist_url)
-        logger.debug("Loaded %i QIDs from blocklist", len(blocked_qids))
+        logger.info("Loaded %i QIDs from blocklist", len(blocked_qids))
 
     edits = process_graph(input=input, blocked_qids=blocked_qids)
 
@@ -83,7 +83,7 @@ def main(
 
         wait_time = max(0, min_time_between_edits - (time.time() - last_edit))
         if wait_time > 0:
-            logger.info("Waiting for %.1f seconds", wait_time)
+            logger.debug("Waiting for %.1f seconds", wait_time)
             time.sleep(wait_time)
 
         mediawiki_api.wbeditentity(
