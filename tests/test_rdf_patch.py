@@ -1,13 +1,6 @@
 from io import StringIO
-from typing import Any
 
-import wikidata_rdf_patch.rdf_patch as rdf_patch
 from wikidata_rdf_patch.rdf_patch import process_graph
-
-
-def setup_function(function: Any) -> None:
-    rdf_patch.get_item_page.cache_clear()
-    rdf_patch.resolve_claim_guid.cache_clear()
 
 
 def test_change_statement_rank() -> None:

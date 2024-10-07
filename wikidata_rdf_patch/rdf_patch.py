@@ -6,7 +6,6 @@ import urllib.request
 from collections import OrderedDict, defaultdict
 from collections.abc import Iterator
 from dataclasses import dataclass
-from functools import cache
 from typing import Any, TextIO, cast
 
 import pywikibot  # type: ignore
@@ -154,12 +153,6 @@ def _compute_qname(uri: URIRef) -> tuple[str, str]:
     return (prefix, name)
 
 
-@cache
-def get_item_page(qid: str) -> pywikibot.ItemPage:
-    assert qid.startswith("Q"), qid
-    return pywikibot.ItemPage(SITE, qid)
-
-
 def _resolve_object_uriref(object: URIRef) -> wikidata_typing.WikibaseEntityIdDataValue:
     prefix, local_name = _compute_qname(object)
     assert prefix == "wd"
@@ -221,12 +214,6 @@ def _pywikibot_qualifier_from_json(snak: wikidata_typing.Snak) -> pywikibot.Clai
     assert qualifier.isQualifier is True
     assert qualifier.isReference is False
     return qualifier
-
-
-def _pywikibot_reference_to_json(reference: pywikibot.Claim) -> wikidata_typing.Snak:
-    assert reference.isQualifier is False
-    assert reference.isReference is True
-    return cast(wikidata_typing.Snak, reference.toJSON())
 
 
 def _pywikibot_reference_from_json(snak: wikidata_typing.Snak) -> pywikibot.Claim:
@@ -373,6 +360,9 @@ class ProcessState:
     edit_summaries: dict[str, str]
     user_agent: str
     property_datatypes: dict[str, wikidata_typing.DataType]
+    items: dict[str, wikidata_typing.Item]
+    # TODO: Deprecate pywikibot.ItemPage
+    item_pages: dict[str, pywikibot.ItemPage]
 
 
 def _property_snakvalue(
@@ -414,21 +404,6 @@ def _resolve_object_bnode_reference(
 
 def _graph_empty_node(graph: Graph, object: AnyRDFObject) -> bool:
     return isinstance(object, BNode) and len(list(graph.predicate_objects(object))) == 0
-
-
-@cache
-def resolve_claim_guid(guid: str) -> pywikibot.Claim:
-    qid, hash = guid.split("-", 1)
-    snak = f"{qid}${hash}"
-
-    item = get_item_page(qid.upper())
-
-    for property in item.claims:
-        for claim in item.claims[property]:
-            if snak == claim.snak:
-                return claim
-
-    assert False, f"Can't resolve statement GUID: {guid}"
 
 
 def _claim_uri(claim: pywikibot.Claim) -> str:
@@ -571,26 +546,29 @@ def _claim_set_rank(claim: pywikibot.Claim, rank: URIRef) -> bool:
     return True
 
 
+def _graph_urirefs(graph: Graph) -> Iterator[URIRef]:
+    for subject in graph.subjects(unique=True):
+        if isinstance(subject, URIRef):
+            yield subject
+
+    for predicate in graph.predicates(unique=True):
+        if isinstance(predicate, URIRef):
+            yield predicate
+
+    for object in graph.objects(unique=True):
+        if isinstance(object, URIRef):
+            yield object
+
+
 def _prefetch_property_datatypes(
     graph: Graph, user_agent: str
 ) -> dict[str, wikidata_typing.DataType]:
     pids: set[str] = set()
 
-    def _visit_uriref(subject: Any) -> None:
-        if not isinstance(subject, URIRef):
-            return
-        _, local_name = _compute_qname(subject)
+    for uri in _graph_urirefs(graph):
+        _, local_name = _compute_qname(uri)
         if re.match(r"^P\d+$", local_name):
             pids.add(local_name)
-
-    for subject in graph.subjects(unique=True):
-        _visit_uriref(subject)
-
-    for predicate in graph.predicates(unique=True):
-        _visit_uriref(predicate)
-
-    for object in graph.objects(unique=True):
-        _visit_uriref(object)
 
     if len(pids) == 0:
         logger.debug("No properties prefetched")
@@ -609,6 +587,55 @@ def _prefetch_property_datatypes(
     return datatypes
 
 
+def _prefetch_item_pages(
+    graph: Graph, user_agent: str
+) -> tuple[dict[str, wikidata_typing.Item], dict[str, pywikibot.ItemPage]]:
+    qids: set[str] = set()
+
+    for uri in _graph_urirefs(graph):
+        _, local_name = _compute_qname(uri)
+        if re.match(r"^Q\d+$", local_name):
+            qids.add(local_name)
+        elif m := re.match(r"^(Q\d+|q\d+)-", local_name):
+            qids.add(m.group(1))
+
+    if len(qids) == 0:
+        logger.debug("No items prefetched")
+        return ({}, {})
+
+    entities = mediawiki_api.wbgetentities(
+        ids=sorted(qids),
+        user_agent=user_agent,
+    )
+
+    items: dict[str, wikidata_typing.Item] = {}
+    item_pages: dict[str, pywikibot.ItemPage] = {}
+
+    for qid, entity in entities.items():
+        assert entity["type"] == "item"
+        items[qid] = entity
+        # TODO: Deprecate pywikibot.ItemPage
+        item_pages[qid] = pywikibot.ItemPage(site=SITE, title=qid)
+    logger.debug("Prefetched %d items", len(items))
+    return (items, item_pages)
+
+
+def _find_claim_guid(
+    items: dict[str, pywikibot.ItemPage], guid: str
+) -> pywikibot.Claim:
+    qid, hash = guid.split("-", 1)
+    snak = f"{qid}${hash}"
+
+    item: pywikibot.ItemPage = items[qid.upper()]
+
+    for property in item.claims:
+        for claim in item.claims[property]:
+            if snak == claim.snak:
+                return claim
+
+    assert False, f"Can't resolve statement GUID: {guid}"
+
+
 def process_graph(
     input: TextIO,
     blocked_qids: set[str] = set(),
@@ -618,11 +645,17 @@ def process_graph(
     data = PREFIXES + input.read()
     graph.parse(data=data)
 
+    items, item_pages = _prefetch_item_pages(graph=graph, user_agent=user_agent)
+
     state = ProcessState(
         graph=graph,
         edit_summaries={},
         user_agent=user_agent,
-        property_datatypes=_prefetch_property_datatypes(graph, user_agent),
+        property_datatypes=_prefetch_property_datatypes(
+            graph=graph, user_agent=user_agent
+        ),
+        items=items,
+        item_pages=item_pages,
     )
 
     changed_claims: dict[pywikibot.ItemPage, set[HashableClaim]] = defaultdict(set)
@@ -737,13 +770,13 @@ def process_graph(
 
         if prefix == "wd":
             assert isinstance(subject, URIRef)
-            item: pywikibot.ItemPage = get_item_page(local_name)
+            item = state.item_pages[local_name]
             for predicate, object in _predicate_objects(graph, subject):
                 visit_wd_subject(item, predicate, object)
 
         elif prefix == "wds":
             assert isinstance(subject, URIRef)
-            claim: pywikibot.Claim = resolve_claim_guid(local_name)
+            claim: pywikibot.Claim = _find_claim_guid(state.item_pages, local_name)
             claim_item: pywikibot.ItemPage | None = claim.on_item
             assert claim_item
             for predicate, object in _predicate_objects(graph, subject):
