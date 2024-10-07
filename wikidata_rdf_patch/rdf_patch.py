@@ -160,20 +160,6 @@ def get_item_page(qid: str) -> pywikibot.ItemPage:
     return pywikibot.ItemPage(SITE, qid)
 
 
-@cache
-def get_property_datatype(pid: str) -> wikidata_typing.DataType:
-    assert pid.startswith("P"), pid
-    entities = mediawiki_api.wbgetentities(
-        # TODO: Would be better to prefetch all properties upfront
-        ids=[pid],
-        # TODO: Get user agent from cli somehow
-        user_agent=mediawiki_api.DEFAULT_USER_AGENT,
-    )
-    entity = entities[pid]
-    assert entity["type"] == "property"
-    return entity["datatype"]
-
-
 def _resolve_object_uriref(object: URIRef) -> wikidata_typing.WikibaseEntityIdDataValue:
     prefix, local_name = _compute_qname(object)
     assert prefix == "wd"
@@ -381,20 +367,30 @@ def _resolve_object(graph: Graph, object: AnyRDFObject) -> wikidata_typing.DataV
         return _resolve_object_literal(object)
 
 
+@dataclass
+class ProcessState:
+    graph: Graph
+    edit_summaries: dict[str, str]
+    user_agent: str
+    property_datatypes: dict[str, wikidata_typing.DataType]
+
+
 def _property_snakvalue(
-    pid: str, value: wikidata_typing.DataValue
+    state: ProcessState,
+    pid: str,
+    value: wikidata_typing.DataValue,
 ) -> wikidata_typing.SnakValue:
     assert pid.startswith("P"), pid
     return {
         "snaktype": "value",
         "property": pid,
-        "datatype": get_property_datatype(pid),
+        "datatype": state.property_datatypes[pid],
         "datavalue": value,
     }
 
 
 def _resolve_object_bnode_reference(
-    graph: Graph, object: BNode
+    state: ProcessState, object: BNode
 ) -> OrderedDict[str, list[pywikibot.Claim]]:
     source: OrderedDict[str, list[pywikibot.Claim]] = OrderedDict()
 
@@ -405,13 +401,13 @@ def _resolve_object_bnode_reference(
         claim = _pywikibot_reference_from_json(snak)
         source[pid].append(claim)
 
-    for pr_name, pr_object in _predicate_ns_objects(graph, object, PR):
-        target = _resolve_object(graph, pr_object)
-        add_reference(snak=_property_snakvalue(pid=pr_name, value=target))
+    for pr_name, pr_object in _predicate_ns_objects(state.graph, object, PR):
+        target = _resolve_object(state.graph, pr_object)
+        add_reference(snak=_property_snakvalue(state=state, pid=pr_name, value=target))
 
-    for prv_name, prv_object in _predicate_ns_objects(graph, object, PRV):
-        target = _resolve_object(graph, prv_object)
-        add_reference(snak=_property_snakvalue(pid=prv_name, value=target))
+    for prv_name, prv_object in _predicate_ns_objects(state.graph, object, PRV):
+        target = _resolve_object(state.graph, prv_object)
+        add_reference(snak=_property_snakvalue(state=state, pid=prv_name, value=target))
 
     return source
 
@@ -442,6 +438,7 @@ def _claim_uri(claim: pywikibot.Claim) -> str:
 
 
 def _item_append_claim_target(
+    state: ProcessState,
     item: pywikibot.ItemPage,
     pid: str,
     target: wikidata_typing.DataValue,
@@ -460,7 +457,7 @@ def _item_append_claim_target(
         ):
             return (False, claim)
 
-    snak = _property_snakvalue(pid=pid, value=target)
+    snak = _property_snakvalue(state=state, pid=pid, value=target)
     new_claim = _pywikibot_claim_from_json(snak)
     item.claims[pid].append(new_claim)
 
@@ -495,11 +492,12 @@ def _snak_equals(
 
 
 def _claim_set_target(
+    state: ProcessState,
     claim: pywikibot.Claim,
     target: wikidata_typing.DataValue,
 ) -> bool:
     claim_json = _pywikibot_claim_to_json(claim)
-    snak = _property_snakvalue(pid=claim.getID(), value=target)
+    snak = _property_snakvalue(state=state, pid=claim.getID(), value=target)
 
     if _snak_equals(claim_json["mainsnak"], snak):
         return False
@@ -511,6 +509,7 @@ def _claim_set_target(
 
 
 def _claim_append_qualifer(
+    state: ProcessState,
     claim: pywikibot.Claim,
     pid: str,
     target: wikidata_typing.DataValue,
@@ -521,7 +520,7 @@ def _claim_append_qualifer(
         claim.qualifiers[pid] = []
     qualifiers = claim.qualifiers[pid]
 
-    snak = _property_snakvalue(pid=pid, value=target)
+    snak = _property_snakvalue(state=state, pid=pid, value=target)
 
     for qualifier in qualifiers:
         qualifier_json = _pywikibot_qualifier_to_json(qualifier)
@@ -535,13 +534,14 @@ def _claim_append_qualifer(
 
 
 def _claim_set_qualifer(
+    state: ProcessState,
     claim: pywikibot.Claim,
     pid: str,
     target: wikidata_typing.DataValue,
 ) -> bool:
     assert pid.startswith("P"), pid
 
-    snak = _property_snakvalue(pid=pid, value=target)
+    snak = _property_snakvalue(state=state, pid=pid, value=target)
 
     if pid in claim.qualifiers and len(claim.qualifiers[pid]) == 1:
         qualifier: pywikibot.Claim = claim.qualifiers[pid][0]
@@ -571,21 +571,58 @@ def _claim_set_rank(claim: pywikibot.Claim, rank: URIRef) -> bool:
     return True
 
 
-@dataclass
-class ProcessState:
-    edit_summaries: dict[str, str]
+def _prefetch_property_datatypes(
+    graph: Graph, user_agent: str
+) -> dict[str, wikidata_typing.DataType]:
+    pids: set[str] = set()
+
+    def _visit_uriref(subject: Any) -> None:
+        if not isinstance(subject, URIRef):
+            return
+        _, local_name = _compute_qname(subject)
+        if re.match(r"^P\d+$", local_name):
+            pids.add(local_name)
+
+    for subject in graph.subjects(unique=True):
+        _visit_uriref(subject)
+
+    for predicate in graph.predicates(unique=True):
+        _visit_uriref(predicate)
+
+    for object in graph.objects(unique=True):
+        _visit_uriref(object)
+
+    if len(pids) == 0:
+        logger.debug("No properties prefetched")
+        return {}
+
+    entities = mediawiki_api.wbgetentities(
+        ids=sorted(pids),
+        user_agent=user_agent,
+    )
+
+    datatypes: dict[str, wikidata_typing.DataType] = {}
+    for pid, entity in entities.items():
+        assert entity["type"] == "property"
+        datatypes[pid] = entity["datatype"]
+    logger.debug("Prefetched %d property datatypes", len(datatypes))
+    return datatypes
 
 
 def process_graph(
     input: TextIO,
     blocked_qids: set[str] = set(),
+    user_agent: str = mediawiki_api.DEFAULT_USER_AGENT,
 ) -> Iterator[tuple[wikidata_typing.Item, list[wikidata_typing.Statement], str | None]]:
     graph = Graph()
     data = PREFIXES + input.read()
     graph.parse(data=data)
 
     state = ProcessState(
+        graph=graph,
         edit_summaries={},
+        user_agent=user_agent,
+        property_datatypes=_prefetch_property_datatypes(graph, user_agent),
     )
 
     changed_claims: dict[pywikibot.ItemPage, set[HashableClaim]] = defaultdict(set)
@@ -604,7 +641,7 @@ def process_graph(
         if predicate_prefix == "wdt":
             target = _resolve_object(graph, object)
             did_change, claim = _item_append_claim_target(
-                item, predicate_local_name, target
+                state, item, predicate_local_name, target
             )
             if claim.rank == "deprecated":
                 logger.warning("DeprecatedClaim <%s> already exists", _claim_uri(claim))
@@ -641,7 +678,9 @@ def process_graph(
 
         if predicate_prefix == "pq" or predicate_prefix == "pqv":
             target = _resolve_object(graph, object)
-            did_change = _claim_append_qualifer(claim, predicate_local_name, target)
+            did_change = _claim_append_qualifer(
+                state, claim, predicate_local_name, target
+            )
             mark_changed(item, claim, did_change)
 
         elif predicate_prefix == "pqe" or predicate_prefix == "pqve":
@@ -651,19 +690,21 @@ def process_graph(
                     mark_changed(item, claim, True)
             else:
                 target = _resolve_object(graph, object)
-                did_change = _claim_set_qualifer(claim, predicate_local_name, target)
+                did_change = _claim_set_qualifer(
+                    state, claim, predicate_local_name, target
+                )
                 mark_changed(item, claim, did_change)
 
         elif predicate_prefix == "ps":
             target = _resolve_object(graph, object)
             assert claim.getID() == predicate_local_name
-            did_change = _claim_set_target(claim, target)
+            did_change = _claim_set_target(state, claim, target)
             mark_changed(item, claim, did_change)
 
         elif predicate_prefix == "psv":
             target = _resolve_object(graph, object)
             assert claim.getID() == predicate_local_name
-            did_change = _claim_set_target(claim, target)
+            did_change = _claim_set_target(state, claim, target)
             mark_changed(item, claim, did_change)
 
         elif predicate == WIKIBASE.rank:
@@ -673,7 +714,7 @@ def process_graph(
 
         elif predicate == PROV.wasDerivedFrom or predicate == PROV.wasOnlyDerivedFrom:
             assert isinstance(object, BNode)
-            source = _resolve_object_bnode_reference(graph, object)
+            source = _resolve_object_bnode_reference(state, object)
             prev_sources = claim.sources.copy()
             if predicate == PROV.wasOnlyDerivedFrom:
                 claim.sources = [source]
