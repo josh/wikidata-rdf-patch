@@ -87,7 +87,7 @@ def main(
     edits = process_graph(input=input, blocked_qids=blocked_qids, user_agent=user_agent)
 
     last_edit: float = 0.0
-    pbar = tqdm(list(edits), desc="Submitting edits", unit="item")
+    pbar = tqdm(list(edits), unit="item")
 
     if not session:
         return
