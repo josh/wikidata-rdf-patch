@@ -106,6 +106,76 @@ AnyRDFPredicate = URIRef
 AnyRDFObject = URIRef | BNode | Literal
 
 
+def _graph_urirefs(graph: Graph) -> Iterator[URIRef]:
+    for subject in graph.subjects(unique=True):
+        if isinstance(subject, URIRef):
+            yield subject
+
+    for predicate in graph.predicates(unique=True):
+        if isinstance(predicate, URIRef):
+            yield predicate
+
+    for object in graph.objects(unique=True):
+        if isinstance(object, URIRef):
+            yield object
+
+
+def _predicate_objects(
+    graph: Graph, subject: AnyRDFSubject
+) -> Iterator[tuple[AnyRDFPredicate, AnyRDFObject]]:
+    for predicate, object in graph.predicate_objects(subject, unique=True):
+        assert isinstance(predicate, URIRef)
+        assert (
+            isinstance(object, URIRef)
+            or isinstance(object, BNode)
+            or isinstance(object, Literal)
+        )
+        yield predicate, object
+
+
+def _predicate_ns_objects(
+    graph: Graph, subject: AnyRDFSubject, predicate_ns: Namespace
+) -> Iterator[tuple[str, AnyRDFObject]]:
+    for predicate, object in _predicate_objects(graph, subject):
+        _, ns, name = NS_MANAGER.compute_qname(predicate)
+        if predicate_ns == ns:
+            yield name, object
+
+
+def _graph_empty_node(graph: Graph, object: AnyRDFObject) -> bool:
+    return isinstance(object, BNode) and len(list(graph.predicate_objects(object))) == 0
+
+
+def _compute_qname(uri: URIRef) -> tuple[str, str]:
+    prefix, _, name = NS_MANAGER.compute_qname(uri)
+    return (prefix, name)
+
+
+def _resolve_object_uriref(object: URIRef) -> wikidata_typing.WikibaseEntityIdDataValue:
+    prefix, local_name = _compute_qname(object)
+    assert prefix == "wd"
+    if local_name.startswith("Q"):
+        return {
+            "type": "wikibase-entityid",
+            "value": {
+                "entity-type": "item",
+                "numeric-id": int(local_name[1:]),
+                "id": local_name,
+            },
+        }
+    elif local_name.startswith("P"):
+        return {
+            "type": "wikibase-entityid",
+            "value": {
+                "entity-type": "property",
+                "numeric-id": int(local_name[1:]),
+                "id": local_name,
+            },
+        }
+    else:
+        raise NotImplementedError(f"Unknown item: {object}")
+
+
 def _resolve_object_bnode_time_value(
     graph: Graph, object: BNode
 ) -> wikidata_typing.TimeDataValue:
@@ -191,36 +261,6 @@ def _resolve_object_bnode(
         raise NotImplementedError(f"Unknown bnode: {rdf_type}")
 
 
-def _compute_qname(uri: URIRef) -> tuple[str, str]:
-    prefix, _, name = NS_MANAGER.compute_qname(uri)
-    return (prefix, name)
-
-
-def _resolve_object_uriref(object: URIRef) -> wikidata_typing.WikibaseEntityIdDataValue:
-    prefix, local_name = _compute_qname(object)
-    assert prefix == "wd"
-    if local_name.startswith("Q"):
-        return {
-            "type": "wikibase-entityid",
-            "value": {
-                "entity-type": "item",
-                "numeric-id": int(local_name[1:]),
-                "id": local_name,
-            },
-        }
-    elif local_name.startswith("P"):
-        return {
-            "type": "wikibase-entityid",
-            "value": {
-                "entity-type": "property",
-                "numeric-id": int(local_name[1:]),
-                "id": local_name,
-            },
-        }
-    else:
-        raise NotImplementedError(f"Unknown item: {object}")
-
-
 def _resolve_object_literal(
     object: Literal,
 ) -> (
@@ -266,6 +306,75 @@ def _resolve_object(graph: Graph, object: AnyRDFObject) -> wikidata_typing.DataV
         return _resolve_object_literal(object)
 
 
+def _datavalue_equals(
+    a: wikidata_typing.DataValue, b: wikidata_typing.DataValue
+) -> bool:
+    if a["type"] == "wikibase-entityid" and b["type"] == "wikibase-entityid":
+        if a["value"]["entity-type"] != b["value"]["entity-type"]:
+            return False
+        elif "numeric-id" in a["value"] and "numeric-id" in b["value"]:
+            return a["value"]["numeric-id"] == b["value"]["numeric-id"]
+        elif "id" in a["value"] and "id" in b["value"]:
+            return a["value"]["id"] == b["value"]["id"]
+        else:
+            return False
+    else:
+        return a == b
+
+
+def _snak_equals(a: wikidata_typing.Snak, b: wikidata_typing.Snak) -> bool:
+    if a["snaktype"] == "value" and b["snaktype"] == "value":
+        return _datavalue_equals(a["datavalue"], b["datavalue"])
+    else:
+        return a == b
+
+
+def _pywikibot_reference_from_json(snak: wikidata_typing.Snak) -> pywikibot.Claim:
+    reference = pywikibot.Claim.fromJSON(site=SITE, data={"mainsnak": snak})
+    reference.isReference = True
+    assert reference.isQualifier is False
+    assert reference.isReference is True
+    return reference
+
+
+def _pywikibot_claim_from_json(snak: wikidata_typing.Snak) -> pywikibot.Claim:
+    statement = {"type": "statement", "mainsnak": snak}
+    claim = pywikibot.Claim.fromJSON(site=SITE, data=statement)
+    assert claim.isQualifier is False
+    assert claim.isReference is False
+    return claim
+
+
+def _pywikibot_claim_to_json(claim: pywikibot.Claim) -> wikidata_typing.Statement:
+    assert claim.isQualifier is False
+    assert claim.isReference is False
+    if claim.target is None:
+        return {
+            "id": "",
+            "type": "statement",
+            "rank": "normal",
+            "mainsnak": {
+                "snaktype": "novalue",
+                "property": claim.getID(),
+            },
+        }
+    return cast(wikidata_typing.Statement, claim.toJSON())
+
+
+def _pywikibot_qualifier_from_json(snak: wikidata_typing.Snak) -> pywikibot.Claim:
+    qualifier = pywikibot.Claim.fromJSON(site=SITE, data={"mainsnak": snak})
+    qualifier.isQualifier = True
+    assert qualifier.isQualifier is True
+    assert qualifier.isReference is False
+    return qualifier
+
+
+def _pywikibot_qualifier_to_json(qualifier: pywikibot.Claim) -> wikidata_typing.Snak:
+    assert qualifier.isQualifier is True
+    assert qualifier.isReference is False
+    return cast(wikidata_typing.Snak, qualifier.toJSON())
+
+
 @dataclass
 class ProcessState:
     graph: Graph
@@ -291,36 +400,6 @@ def _property_snakvalue(
     }
 
 
-def _predicate_objects(
-    graph: Graph, subject: AnyRDFSubject
-) -> Iterator[tuple[AnyRDFPredicate, AnyRDFObject]]:
-    for predicate, object in graph.predicate_objects(subject, unique=True):
-        assert isinstance(predicate, URIRef)
-        assert (
-            isinstance(object, URIRef)
-            or isinstance(object, BNode)
-            or isinstance(object, Literal)
-        )
-        yield predicate, object
-
-
-def _predicate_ns_objects(
-    graph: Graph, subject: AnyRDFSubject, predicate_ns: Namespace
-) -> Iterator[tuple[str, AnyRDFObject]]:
-    for predicate, object in _predicate_objects(graph, subject):
-        _, ns, name = NS_MANAGER.compute_qname(predicate)
-        if predicate_ns == ns:
-            yield name, object
-
-
-def _pywikibot_reference_from_json(snak: wikidata_typing.Snak) -> pywikibot.Claim:
-    reference = pywikibot.Claim.fromJSON(site=SITE, data={"mainsnak": snak})
-    reference.isReference = True
-    assert reference.isQualifier is False
-    assert reference.isReference is True
-    return reference
-
-
 def _resolve_object_bnode_reference(
     state: ProcessState, object: BNode
 ) -> OrderedDict[str, list[pywikibot.Claim]]:
@@ -344,38 +423,10 @@ def _resolve_object_bnode_reference(
     return source
 
 
-def _graph_empty_node(graph: Graph, object: AnyRDFObject) -> bool:
-    return isinstance(object, BNode) and len(list(graph.predicate_objects(object))) == 0
-
-
 def _claim_uri(claim: pywikibot.Claim) -> str:
     snak: str = claim.snak
     guid = snak.replace("$", "-")
     return f"http://www.wikidata.org/entity/statement/{guid}"
-
-
-def _pywikibot_claim_to_json(claim: pywikibot.Claim) -> wikidata_typing.Statement:
-    assert claim.isQualifier is False
-    assert claim.isReference is False
-    if claim.target is None:
-        return {
-            "id": "",
-            "type": "statement",
-            "rank": "normal",
-            "mainsnak": {
-                "snaktype": "novalue",
-                "property": claim.getID(),
-            },
-        }
-    return cast(wikidata_typing.Statement, claim.toJSON())
-
-
-def _pywikibot_claim_from_json(snak: wikidata_typing.Snak) -> pywikibot.Claim:
-    statement = {"type": "statement", "mainsnak": snak}
-    claim = pywikibot.Claim.fromJSON(site=SITE, data=statement)
-    assert claim.isQualifier is False
-    assert claim.isReference is False
-    return claim
 
 
 def _item_append_claim_target(
@@ -407,33 +458,6 @@ def _item_append_claim_target(
     return (True, new_claim)
 
 
-def _datavalue_equals(
-    a: wikidata_typing.DataValue,
-    b: wikidata_typing.DataValue,
-) -> bool:
-    if a["type"] == "wikibase-entityid" and b["type"] == "wikibase-entityid":
-        if a["value"]["entity-type"] != b["value"]["entity-type"]:
-            return False
-        elif "numeric-id" in a["value"] and "numeric-id" in b["value"]:
-            return a["value"]["numeric-id"] == b["value"]["numeric-id"]
-        elif "id" in a["value"] and "id" in b["value"]:
-            return a["value"]["id"] == b["value"]["id"]
-        else:
-            return False
-    else:
-        return a == b
-
-
-def _snak_equals(
-    a: wikidata_typing.Snak,
-    b: wikidata_typing.Snak,
-) -> bool:
-    if a["snaktype"] == "value" and b["snaktype"] == "value":
-        return _datavalue_equals(a["datavalue"], b["datavalue"])
-    else:
-        return a == b
-
-
 def _claim_set_target(
     state: ProcessState,
     claim: pywikibot.Claim,
@@ -449,20 +473,6 @@ def _claim_set_target(
     claim.setTarget(new_claim.target)
 
     return True
-
-
-def _pywikibot_qualifier_to_json(qualifier: pywikibot.Claim) -> wikidata_typing.Snak:
-    assert qualifier.isQualifier is True
-    assert qualifier.isReference is False
-    return cast(wikidata_typing.Snak, qualifier.toJSON())
-
-
-def _pywikibot_qualifier_from_json(snak: wikidata_typing.Snak) -> pywikibot.Claim:
-    qualifier = pywikibot.Claim.fromJSON(site=SITE, data={"mainsnak": snak})
-    qualifier.isQualifier = True
-    assert qualifier.isQualifier is True
-    assert qualifier.isReference is False
-    return qualifier
 
 
 def _claim_append_qualifer(
@@ -511,20 +521,6 @@ def _claim_set_qualifer(
     claim.qualifiers[pid] = [new_qualifier]
 
     return True
-
-
-def _graph_urirefs(graph: Graph) -> Iterator[URIRef]:
-    for subject in graph.subjects(unique=True):
-        if isinstance(subject, URIRef):
-            yield subject
-
-    for predicate in graph.predicates(unique=True):
-        if isinstance(predicate, URIRef):
-            yield predicate
-
-    for object in graph.objects(unique=True):
-        if isinstance(object, URIRef):
-            yield object
 
 
 def _prefetch_property_datatypes(
