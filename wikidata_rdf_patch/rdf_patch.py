@@ -380,12 +380,14 @@ def _pywikibot_claim_from_json(snak: wikidata_typing.Snak) -> pywikibot.Claim:
 
 def _item_append_claim_target(
     state: ProcessState,
-    item: pywikibot.ItemPage,
+    qid: str,
     pid: str,
     target: wikidata_typing.DataValue,
 ) -> tuple[bool, pywikibot.Claim]:
     assert pid.startswith("P"), pid
 
+    # TODO: Avoid mutating pywikibot.ItemPage
+    item: pywikibot.ItemPage = state.item_pages[qid]
     if pid not in item.claims:
         item.claims[pid] = []
     claims = item.claims[pid]
@@ -586,18 +588,17 @@ def _prefetch_item_pages(
     return (items, item_pages)
 
 
-def _find_claim_guid(
-    items: dict[str, pywikibot.ItemPage], guid: str
-) -> pywikibot.Claim:
+def _find_claim_guid(state: ProcessState, guid: str) -> tuple[str, pywikibot.Claim]:
     qid, hash = guid.split("-", 1)
     snak = f"{qid}${hash}"
 
-    item: pywikibot.ItemPage = items[qid.upper()]
+    # TODO: Avoid accessing pywikibot.ItemPage
+    item: pywikibot.ItemPage = state.item_pages[qid.upper()]
 
     for property in item.claims:
         for claim in item.claims[property]:
             if snak == claim.snak:
-                return claim
+                return (qid.upper(), claim)
 
     assert False, f"Can't resolve statement GUID: {guid}"
 
@@ -658,40 +659,40 @@ def process_graph(
         item_pages=item_pages,
     )
 
-    changed_claims: dict[pywikibot.ItemPage, set[HashableClaim]] = defaultdict(set)
+    changed_claims: dict[str, set[HashableClaim]] = defaultdict(set)
 
-    def mark_changed(
-        item: pywikibot.ItemPage, claim: pywikibot.Claim, did_change: bool = True
-    ) -> None:
+    def mark_changed(qid: str, claim: pywikibot.Claim, did_change: bool = True) -> None:
+        assert qid.startswith("Q"), qid
         if did_change:
-            changed_claims[item].add(HashableClaim(claim))
+            changed_claims[qid].add(HashableClaim(claim))
 
-    def visit_wd_subject(
-        item: pywikibot.ItemPage, predicate: URIRef, object: AnyRDFObject
-    ) -> None:
+    def visit_wd_subject(qid: str, predicate: URIRef, object: AnyRDFObject) -> None:
+        assert qid.startswith("Q"), qid
         predicate_prefix, predicate_local_name = _compute_qname(predicate)
 
         if predicate_prefix == "wdt":
             target = _resolve_object(graph, object)
             did_change, claim = _item_append_claim_target(
-                state, item, predicate_local_name, target
+                state, qid, predicate_local_name, target
             )
             if claim.rank == "deprecated":
                 logger.warning("DeprecatedClaim <%s> already exists", _claim_uri(claim))
-            mark_changed(item, claim, did_change)
+            mark_changed(qid, claim, did_change)
 
         elif predicate_prefix == "p" and isinstance(object, BNode):
             property_claim = pywikibot.Claim(site=SITE, pid=predicate_local_name)
-            if predicate_local_name not in item.claims:
-                item.claims[predicate_local_name] = []
-            item.claims[predicate_local_name].append(property_claim)
-            mark_changed(item, property_claim)
+            # TODO: Avoid mutating pywikibot.ItemPage
+            item_page: pywikibot.ItemPage = state.item_pages[qid]
+            if predicate_local_name not in item_page.claims:
+                item_page.claims[predicate_local_name] = []
+            item_page.claims[predicate_local_name].append(property_claim)
+            mark_changed(qid, property_claim)
 
             for predicate, p_object in _predicate_objects(graph, object):
-                visit_wds_subject(item, property_claim, predicate, p_object)
+                visit_wds_subject(qid, property_claim, predicate, p_object)
 
         elif predicate == WIKIDATABOTS.editSummary:
-            state.edit_summaries[item.id] = object.toPython()
+            state.edit_summaries[qid] = object.toPython()
 
         else:
             logger.error(
@@ -702,11 +703,12 @@ def process_graph(
             )
 
     def visit_wds_subject(
-        item: pywikibot.ItemPage,
+        qid: str,
         claim: pywikibot.Claim,
         predicate: URIRef,
         object: AnyRDFObject,
     ) -> None:
+        assert qid.startswith("Q"), qid
         predicate_prefix, predicate_local_name = _compute_qname(predicate)
 
         if predicate_prefix == "pq" or predicate_prefix == "pqv":
@@ -714,36 +716,36 @@ def process_graph(
             did_change = _claim_append_qualifer(
                 state, claim, predicate_local_name, target
             )
-            mark_changed(item, claim, did_change)
+            mark_changed(qid, claim, did_change)
 
         elif predicate_prefix == "pqe" or predicate_prefix == "pqve":
             if _graph_empty_node(graph, object):
                 if predicate_local_name in claim.qualifiers:
                     del claim.qualifiers[predicate_local_name]
-                    mark_changed(item, claim, True)
+                    mark_changed(qid, claim, True)
             else:
                 target = _resolve_object(graph, object)
                 did_change = _claim_set_qualifer(
                     state, claim, predicate_local_name, target
                 )
-                mark_changed(item, claim, did_change)
+                mark_changed(qid, claim, did_change)
 
         elif predicate_prefix == "ps":
             target = _resolve_object(graph, object)
             assert claim.getID() == predicate_local_name
             did_change = _claim_set_target(state, claim, target)
-            mark_changed(item, claim, did_change)
+            mark_changed(qid, claim, did_change)
 
         elif predicate_prefix == "psv":
             target = _resolve_object(graph, object)
             assert claim.getID() == predicate_local_name
             did_change = _claim_set_target(state, claim, target)
-            mark_changed(item, claim, did_change)
+            mark_changed(qid, claim, did_change)
 
         elif predicate == WIKIBASE.rank:
             assert isinstance(object, URIRef)
             did_change = _claim_set_rank(claim, object)
-            mark_changed(item, claim, did_change)
+            mark_changed(qid, claim, did_change)
 
         elif predicate == PROV.wasDerivedFrom or predicate == PROV.wasOnlyDerivedFrom:
             assert isinstance(object, BNode)
@@ -753,10 +755,10 @@ def process_graph(
                 claim.sources = [source]
             else:
                 claim.sources.append(source)
-            mark_changed(item, claim, claim.sources != prev_sources)
+            mark_changed(qid, claim, claim.sources != prev_sources)
 
         elif predicate == WIKIDATABOTS.editSummary:
-            state.edit_summaries[item.id] = object.toPython()
+            state.edit_summaries[qid] = object.toPython()
 
         else:
             logger.error("NotImplemented: Unknown wds triple: %s %s", predicate, object)
@@ -770,17 +772,14 @@ def process_graph(
 
         if prefix == "wd":
             assert isinstance(subject, URIRef)
-            item = state.item_pages[local_name]
             for predicate, object in _predicate_objects(graph, subject):
-                visit_wd_subject(item, predicate, object)
+                visit_wd_subject(local_name, predicate, object)
 
         elif prefix == "wds":
             assert isinstance(subject, URIRef)
-            claim: pywikibot.Claim = _find_claim_guid(state.item_pages, local_name)
-            claim_item: pywikibot.ItemPage | None = claim.on_item
-            assert claim_item
+            qid, claim = _find_claim_guid(state, local_name)
             for predicate, object in _predicate_objects(graph, subject):
-                visit_wds_subject(claim_item, claim, predicate, object)
+                visit_wds_subject(qid, claim, predicate, object)
 
         elif subject == WIKIDATABOTS.testSubject:
             assert isinstance(subject, URIRef)
@@ -791,18 +790,18 @@ def process_graph(
         else:
             logger.error("NotImplemented: Unknown subject: %s", subject)
 
-    for item, hclaims in changed_claims.items():
-        if item.id in blocked_qids:
-            logger.warning("Skipping edit, %s is blocked", item.id)
+    for qid, hclaims in changed_claims.items():
+        if qid in blocked_qids:
+            logger.warning("Skipping edit, %s is blocked", qid)
             continue
 
-        summary: str | None = state.edit_summaries.get(item.id)
+        summary: str | None = state.edit_summaries.get(qid)
         statements = [_pywikibot_claim_to_json(hclaim.claim) for hclaim in hclaims]
         assert len(statements) > 0, "No claims to save"
-        itemJSON: wikidata_typing.Item = item.toJSON()
-        itemJSON["id"] = item.id
-        itemJSON["lastrevid"] = item.latest_revision_id
-        yield (itemJSON, statements, summary)
+        item: wikidata_typing.Item = state.items[qid]
+        assert item["id"] == qid
+        assert item["lastrevid"] == state.item_pages[qid].latest_revision_id
+        yield (item, statements, summary)
 
 
 def fetch_page_qids(title: str) -> set[str]:
