@@ -105,7 +105,7 @@ def main(
 
         wait_time = max(0, min_time_between_edits - (time.time() - last_edit))
         if wait_time > 0:
-            logger.debug("Waiting for %.1f seconds", wait_time)
+            pbar.write(f"Waiting for {wait_time:.1f} seconds")
             time.sleep(wait_time)
 
         mediawiki_api.wbeditentity(
