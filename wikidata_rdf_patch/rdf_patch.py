@@ -797,14 +797,7 @@ def process_graph(
             continue
 
         summary: str | None = state.edit_summaries.get(item.id)
-        logger.info("Edit %s: %s", item.id, summary or "(no summary)")
-
         statements = [_pywikibot_claim_to_json(hclaim.claim) for hclaim in hclaims]
-        for statement in statements:
-            statement_id = statement["mainsnak"]["property"]
-            statement_snak = statement.get("id", "(new claim)")
-            logger.info(" ⮑ %s / %s", statement_id, statement_snak)
-
         assert len(statements) > 0, "No claims to save"
         itemJSON: wikidata_typing.Item = item.toJSON()
         itemJSON["id"] = item.id
