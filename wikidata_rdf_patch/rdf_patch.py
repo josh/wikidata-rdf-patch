@@ -398,10 +398,12 @@ def _property_snakvalue(
     value: wikidata_typing.DataValue,
 ) -> wikidata_typing.SnakValue:
     assert pid.startswith("P"), pid
+    datatype = state.property_datatypes[pid]
+    assert value["type"] == wikidata_typing.ALLOWED_DATA_TYPE_VALUE_TYPES[datatype]
     return {
         "snaktype": "value",
         "property": pid,
-        "datatype": state.property_datatypes[pid],
+        "datatype": datatype,
         "datavalue": value,
     }
 

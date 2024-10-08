@@ -110,6 +110,27 @@ DataType = Literal[
     "wikibase-sense",
 ]
 
+# https://www.wikidata.org/wiki/Help:Data_type#Technical_details
+ALLOWED_DATA_TYPE_VALUE_TYPES: dict[DataType, str] = {
+    "commonsMedia": "string",
+    "geo-shape": "string",
+    "tabular-data": "string",
+    "url": "string",
+    "external-id": "string",
+    "wikibase-item": "wikibase-entityid",
+    "wikibase-property": "wikibase-entityid",
+    "globe-coordinate": "globecoordinate",
+    "monolingualtext": "monolingualtext",
+    "quantity": "quantity",
+    "string": "string",
+    "time": "time",
+    "musical-notation": "string",
+    "math": "string",
+    "wikibase-lexeme": "wikibase-entityid",
+    "wikibase-form": "wikibase-entityid",
+    "wikibase-sense": "wikibase-entityid",
+}
+
 # https://josh.github.io/wikidata-api-schemas/data-value.schema.json
 DataValue = Union[
     "GlobecoordinateDataValue",
