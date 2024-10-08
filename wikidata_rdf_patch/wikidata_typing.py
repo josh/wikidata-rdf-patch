@@ -1,6 +1,4 @@
-from typing import Literal, TypedDict, Union
-
-from typing_extensions import Required
+from typing import Literal, Required, TypedDict, Union
 
 # https://josh.github.io/wikidata-api-schemas/entity.schema.json
 Entity = Union["Item", "Property"]
