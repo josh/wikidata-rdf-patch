@@ -120,6 +120,12 @@ def _graph_urirefs(graph: Graph) -> Iterator[URIRef]:
             yield object
 
 
+def _subjects(graph: Graph) -> Iterator[AnyRDFSubject]:
+    for subject in graph.subjects(unique=True):
+        assert isinstance(subject, URIRef) or isinstance(subject, BNode)
+        yield subject
+
+
 def _predicate_objects(
     graph: Graph, subject: AnyRDFSubject
 ) -> Iterator[tuple[AnyRDFPredicate, AnyRDFObject]]:
@@ -610,12 +616,6 @@ class HashableClaim:
 
     def __hash__(self) -> int:
         return 0
-
-
-def _subjects(graph: Graph) -> Iterator[AnyRDFSubject]:
-    for subject in graph.subjects(unique=True):
-        assert isinstance(subject, URIRef) or isinstance(subject, BNode)
-        yield subject
 
 
 _RANKS: dict[str, str] = {
