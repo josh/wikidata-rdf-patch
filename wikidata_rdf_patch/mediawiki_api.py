@@ -135,7 +135,7 @@ def _login(session: Session) -> None:
 
 
 # https://www.wikidata.org/w/api.php?action=help&modules=login
-def login(username: str, password: str, user_agent: str) -> Session:
+def login(username: str, password: str, user_agent: str, retries: int = 5) -> Session:
     session = Session(
         cookies=http.cookiejar.CookieJar(),
         csrf_token="",
@@ -144,7 +144,20 @@ def login(username: str, password: str, user_agent: str) -> Session:
         password=password,
         user_agent=user_agent,
     )
-    _login(session=session)
+
+    while retries > 0:
+        try:
+            retries -= 1
+            _login(session=session)
+        except Error as e:
+            # https://www.mediawiki.org/wiki/Manual:Maxlag_parameter
+            if e.code == "maxlag" and retries > 0:
+                logger.warning("Waiting for %.1f seconds", 5)
+                time.sleep(5)
+                continue
+            else:
+                raise e
+
     return session
 
 
