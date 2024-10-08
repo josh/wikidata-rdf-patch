@@ -1,4 +1,5 @@
 import datetime
+import itertools
 import json
 import logging
 import re
@@ -567,19 +568,20 @@ def _prefetch_item_pages(
         logger.debug("No items prefetched")
         return ({}, {})
 
-    entities = mediawiki_api.wbgetentities(
-        ids=sorted(qids),
-        user_agent=user_agent,
-    )
-
     items: dict[str, wikidata_typing.Item] = {}
     item_pages: dict[str, pywikibot.ItemPage] = {}
 
-    for qid, entity in entities.items():
-        assert entity["type"] == "item"
-        items[qid] = entity
-        # TODO: Deprecate pywikibot.ItemPage
-        item_pages[qid] = pywikibot.ItemPage(site=SITE, title=qid)
+    for qid_batch in itertools.batched(qids, n=50):
+        entities = mediawiki_api.wbgetentities(
+            ids=list(qid_batch),
+            user_agent=user_agent,
+        )
+        for qid, entity in entities.items():
+            assert entity["type"] == "item"
+            items[qid] = entity
+            # TODO: Deprecate pywikibot.ItemPage
+            item_pages[qid] = pywikibot.ItemPage(site=SITE, title=qid)
+
     logger.debug("Prefetched %d items", len(items))
     return (items, item_pages)
 

@@ -224,6 +224,8 @@ def wbeditentity(
 
 
 def wbgetentities(ids: list[str], user_agent: str) -> dict[str, Entity]:
+    assert len(ids) > 0, "must specify at least one ID"
+    assert len(ids) <= 50, "must specify at most 50 IDs"
     resp = _request(
         method="GET",
         action="wbgetentities",
