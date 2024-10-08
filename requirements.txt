@@ -38,6 +38,10 @@ ruff==0.6.8
     # via wikidata-rdf-patch (pyproject.toml)
 six==1.16.0
     # via isodate
+tqdm==4.66.5
+    # via wikidata-rdf-patch (pyproject.toml)
+types-tqdm==4.66.0.20240417
+    # via wikidata-rdf-patch (pyproject.toml)
 typing-extensions==4.12.2
     # via
     #   wikidata-rdf-patch (pyproject.toml)

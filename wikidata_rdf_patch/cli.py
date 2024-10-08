@@ -3,6 +3,7 @@ import time
 from typing import TextIO
 
 import click
+from tqdm import tqdm
 
 from wikidata_rdf_patch import mediawiki_api
 
@@ -62,8 +63,6 @@ def main(
     min_time_between_edits: int,
     verbose: bool,
 ) -> None:
-    exit_code = 0
-
     log_level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(level=log_level)
 
@@ -88,9 +87,13 @@ def main(
     edits = process_graph(input=input, blocked_qids=blocked_qids, user_agent=user_agent)
 
     last_edit: float = 0.0
-    for item, claims, summary in edits:
-        if not session:
-            continue
+    pbar = tqdm(list(edits), desc="Submitting edits", unit="item")
+
+    if not session:
+        return
+
+    for item, claims, summary in pbar:
+        pbar.set_description(item["id"])
 
         wait_time = max(0, min_time_between_edits - (time.time() - last_edit))
         if wait_time > 0:
@@ -108,5 +111,3 @@ def main(
 
     if session:
         mediawiki_api.logout(session)
-
-    exit(exit_code)
