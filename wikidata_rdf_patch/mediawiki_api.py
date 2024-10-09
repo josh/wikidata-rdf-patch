@@ -44,6 +44,7 @@ def _request(
     user_agent: str,
     maxlag: int,
 ) -> dict[str, Any]:
+    logger.debug("mediawiki-api: %s", action)
     url = "https://www.wikidata.org/w/api.php"
     headers: dict[str, str] = {
         "User-Agent": user_agent,
@@ -154,7 +155,7 @@ def login(
     password: str,
     user_agent: str = DEFAULT_USER_AGENT,
     maxlag: int = DEFAULT_MAXLAG,
-    retries: int = 5,
+    retries: int = DEFAULT_RETRIES,
 ) -> Session:
     session = Session(
         cookies=http.cookiejar.CookieJar(),
@@ -170,6 +171,7 @@ def login(
         try:
             retries -= 1
             _login(session=session)
+            return session
         except Error as e:
             # https://www.mediawiki.org/wiki/Manual:Maxlag_parameter
             if e.code == "maxlag" and retries > 0:
@@ -179,7 +181,7 @@ def login(
             else:
                 raise e
 
-    return session
+    raise Exception("out of retries")
 
 
 # https://www.wikidata.org/w/api.php?action=help&modules=logout
