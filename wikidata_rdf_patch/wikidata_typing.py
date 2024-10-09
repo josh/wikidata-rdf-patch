@@ -52,13 +52,16 @@ Statement = TypedDict(
         "type": Required[str],
         "id": Required[str],
         "mainsnak": Required["Snak"],
-        "rank": Required[Literal["preferred", "normal", "deprecated"]],
+        "rank": Required["Rank"],
         "qualifiers": dict[str, list["Snak"]],
         "qualifiers-order": list[str],
         "references": list["Reference"],
     },
     total=False,
 )
+
+# https://josh.github.io/wikidata-api-schemas/statement.schema.json#/$defs/rank
+Rank = Literal["preferred", "normal", "deprecated"]
 
 # https://josh.github.io/wikidata-api-schemas/snak.schema.json
 Snak = Union["SnakValue", "SnakSomeValue", "SnakNoValue"]
@@ -237,7 +240,8 @@ Reference = TypedDict(
     "Reference",
     {
         "hash": str,
-        "snaks": dict[str, list["Snak"]],
-        "snaks-order": list[str],
+        "snaks": Required[dict[str, list["Snak"]]],
+        "snaks-order": Required[list[str]],
     },
+    total=False,
 )
