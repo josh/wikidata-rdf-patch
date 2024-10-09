@@ -196,6 +196,26 @@ def logout(session: Session) -> None:
     return None
 
 
+def wbgetentities(
+    ids: list[str],
+    user_agent: str,
+    maxlag: int = DEFAULT_MAXLAG,
+) -> dict[str, Entity]:
+    assert len(ids) > 0, "must specify at least one ID"
+    assert len(ids) <= 50, "must specify at most 50 IDs"
+    resp = _request(
+        method="GET",
+        action="wbgetentities",
+        params={"ids": "|".join(ids)},
+        cookies=http.cookiejar.CookieJar(),
+        user_agent=user_agent,
+        maxlag=maxlag,
+    )
+    assert resp.get("success") == 1, "wbgetentities failed"
+    entities: dict[str, Entity] = resp["entities"]
+    return entities
+
+
 class WikibaseEditEntityData(TypedDict, total=False):
     labels: Labels
     descriptions: Descriptions
@@ -258,23 +278,3 @@ def wbeditentity(
                 raise e
 
     raise Exception("out of retries")
-
-
-def wbgetentities(
-    ids: list[str],
-    user_agent: str,
-    maxlag: int = DEFAULT_MAXLAG,
-) -> dict[str, Entity]:
-    assert len(ids) > 0, "must specify at least one ID"
-    assert len(ids) <= 50, "must specify at most 50 IDs"
-    resp = _request(
-        method="GET",
-        action="wbgetentities",
-        params={"ids": "|".join(ids)},
-        cookies=http.cookiejar.CookieJar(),
-        user_agent=user_agent,
-        maxlag=maxlag,
-    )
-    assert resp.get("success") == 1, "wbgetentities failed"
-    entities: dict[str, Entity] = resp["entities"]
-    return entities
