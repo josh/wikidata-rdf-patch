@@ -20,6 +20,10 @@ DEFAULT_USER_AGENT = (
     "wikidata-rdf-patch/1.0 (https://github.com/josh/wikidata-rdf-patch)"
 )
 
+DEFAULT_MAXLAG: int = 5
+DEFAULT_RETRIES: int = 15
+DEFAULT_RETRY_AFTER: float = 120.0
+
 
 class Error(Exception):
     code: str
@@ -38,6 +42,7 @@ def _request(
     params: dict[str, str],
     cookies: http.cookiejar.CookieJar,
     user_agent: str,
+    maxlag: int,
 ) -> dict[str, Any]:
     url = "https://www.wikidata.org/w/api.php"
     headers: dict[str, str] = {
@@ -45,7 +50,7 @@ def _request(
     }
     params["action"] = action
     params["format"] = "json"
-    params["maxlag"] = "5"
+    params["maxlag"] = str(maxlag)
     encoded_params = urllib.parse.urlencode(params)
     post_data: bytes | None = None
     if method == "GET":
@@ -76,6 +81,7 @@ def _token(
     type: Literal["login", "csrf"],
     cookies: http.cookiejar.CookieJar,
     user_agent: str,
+    maxlag: int,
 ) -> str:
     params = {"meta": "tokens", "type": type}
     resp = _request(
@@ -84,6 +90,7 @@ def _token(
         params=params,
         cookies=cookies,
         user_agent=user_agent,
+        maxlag=maxlag,
     )
     token = resp["query"]["tokens"][f"{type}token"]
     assert isinstance(token, str)
@@ -94,6 +101,7 @@ def _token(
 class Session:
     cookies: http.cookiejar.CookieJar
     user_agent: str
+    maxlag: int
     csrf_token: str
     login_token: str
     username: str
@@ -110,6 +118,7 @@ def _login(session: Session) -> None:
         type="login",
         cookies=session.cookies,
         user_agent=session.user_agent,
+        maxlag=session.maxlag,
     )
     params = {
         "lgname": session.username,
@@ -122,6 +131,7 @@ def _login(session: Session) -> None:
         params=params,
         cookies=session.cookies,
         user_agent=session.user_agent,
+        maxlag=session.maxlag,
     )
     result: str = resp["login"]["result"]
     if result == "Success":
@@ -129,13 +139,20 @@ def _login(session: Session) -> None:
             type="csrf",
             cookies=session.cookies,
             user_agent=session.user_agent,
+            maxlag=session.maxlag,
         )
     else:
         raise LoginError(resp["login"]["reason"])
 
 
 # https://www.wikidata.org/w/api.php?action=help&modules=login
-def login(username: str, password: str, user_agent: str, retries: int = 5) -> Session:
+def login(
+    username: str,
+    password: str,
+    user_agent: str,
+    maxlag: int = DEFAULT_MAXLAG,
+    retries: int = 5,
+) -> Session:
     session = Session(
         cookies=http.cookiejar.CookieJar(),
         csrf_token="",
@@ -143,6 +160,7 @@ def login(username: str, password: str, user_agent: str, retries: int = 5) -> Se
         username=username,
         password=password,
         user_agent=user_agent,
+        maxlag=maxlag,
     )
 
     while retries > 0:
@@ -170,6 +188,7 @@ def logout(session: Session) -> None:
         params=params,
         cookies=session.cookies,
         user_agent=session.user_agent,
+        maxlag=session.maxlag,
     )
     return None
 
@@ -187,7 +206,8 @@ def wbeditentity(
     edit_data: WikibaseEditEntityData,
     baserevid: int | None = None,
     summary: str | None = None,
-    retries: int = 5,
+    retries: int = DEFAULT_RETRIES,
+    retry_after: float = DEFAULT_RETRY_AFTER,
 ) -> None:
     assert qid.startswith("Q"), "QID must start with Q"
 
@@ -212,6 +232,7 @@ def wbeditentity(
                 params=params,
                 cookies=session.cookies,
                 user_agent=session.user_agent,
+                maxlag=session.maxlag,
             )
 
             success: int = resp.get("success", 0)
@@ -223,8 +244,8 @@ def wbeditentity(
         except Error as e:
             # https://www.mediawiki.org/wiki/Manual:Maxlag_parameter
             if e.code == "maxlag" and retries > 0:
-                logger.warning("Waiting for %.1f seconds", 5)
-                time.sleep(5)
+                logger.warning("Waiting for %.1f seconds", retry_after)
+                time.sleep(retry_after)
                 continue
             elif e.code == "assertbotfailed" and retries > 0:
                 logger.warning("session expired, logging in again")
@@ -236,7 +257,11 @@ def wbeditentity(
     raise Exception("out of retries")
 
 
-def wbgetentities(ids: list[str], user_agent: str) -> dict[str, Entity]:
+def wbgetentities(
+    ids: list[str],
+    user_agent: str,
+    maxlag: int = DEFAULT_MAXLAG,
+) -> dict[str, Entity]:
     assert len(ids) > 0, "must specify at least one ID"
     assert len(ids) <= 50, "must specify at most 50 IDs"
     resp = _request(
@@ -245,6 +270,7 @@ def wbgetentities(ids: list[str], user_agent: str) -> dict[str, Entity]:
         params={"ids": "|".join(ids)},
         cookies=http.cookiejar.CookieJar(),
         user_agent=user_agent,
+        maxlag=maxlag,
     )
     assert resp.get("success") == 1, "wbgetentities failed"
     entities: dict[str, Entity] = resp["entities"]
