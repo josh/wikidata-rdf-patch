@@ -65,8 +65,11 @@ def _request(
         cookies.extract_cookies(response, req)
     api_data: dict[str, Any] = json.loads(data)
 
-    if api_error := api_data.get("error", {}):
-        logger.error(api_data["error"]["info"])
+    if api_error := api_data.get("error"):
+        if api_data["error"].get("info"):
+            logger.error("[%s] %s", action, api_data["error"]["info"])
+        for message in api_data["error"].get("messages", []):
+            logger.error("[%s] %s", action, message["name"])
         raise Error(code=api_error["code"], info=api_error["info"])
 
     warnings = api_data.get("warnings", {}).get(action, {})
