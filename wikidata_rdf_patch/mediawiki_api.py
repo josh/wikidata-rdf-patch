@@ -149,7 +149,7 @@ def _login(session: Session) -> None:
 def login(
     username: str,
     password: str,
-    user_agent: str,
+    user_agent: str = DEFAULT_USER_AGENT,
     maxlag: int = DEFAULT_MAXLAG,
     retries: int = 5,
 ) -> Session:
