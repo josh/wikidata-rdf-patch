@@ -4,6 +4,7 @@ from typing import TextIO
 
 import click
 from tqdm import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 import wikidata_rdf_patch.actions_logging as actions_logging
 from wikidata_rdf_patch import mediawiki_api
@@ -94,30 +95,31 @@ def main(
     if not session:
         return
 
-    for item, claims, summary in pbar:
-        pbar.set_description(item["id"])
-        if summary:
-            pbar.write(f"Edit {item['id']}: {summary}")
-        else:
-            pbar.write(f"Edit {item['id']}")
-        for statement in claims:
-            statement_id = statement["mainsnak"]["property"]
-            statement_snak = statement.get("id", "(new claim)")
-            pbar.write(f" ⮑ {statement_id} / {statement_snak}")
+    with logging_redirect_tqdm():
+        for item, claims, summary in pbar:
+            pbar.set_description(item["id"])
+            if summary:
+                pbar.write(f"Edit {item['id']}: {summary}")
+            else:
+                pbar.write(f"Edit {item['id']}")
+            for statement in claims:
+                statement_id = statement["mainsnak"]["property"]
+                statement_snak = statement.get("id", "(new claim)")
+                pbar.write(f" ⮑ {statement_id} / {statement_snak}")
 
-        wait_time = max(0, min_time_between_edits - (time.time() - last_edit))
-        if wait_time > 0:
-            pbar.write(f"Waiting for {wait_time:.1f} seconds")
-            time.sleep(wait_time)
+            wait_time = max(0, min_time_between_edits - (time.time() - last_edit))
+            if wait_time > 0:
+                pbar.write(f"Waiting for {wait_time:.1f} seconds")
+                time.sleep(wait_time)
 
-        mediawiki_api.wbeditentity(
-            session=session,
-            qid=item["id"],
-            baserevid=item["lastrevid"],
-            edit_data={"claims": claims},
-            summary=summary,
-        )
-        last_edit = time.time()
+            mediawiki_api.wbeditentity(
+                session=session,
+                qid=item["id"],
+                baserevid=item["lastrevid"],
+                edit_data={"claims": claims},
+                summary=summary,
+            )
+            last_edit = time.time()
 
-    if session:
-        mediawiki_api.logout(session)
+        if session:
+            mediawiki_api.logout(session)
