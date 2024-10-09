@@ -335,14 +335,6 @@ def _snak_equals(a: wikidata_typing.Snak, b: wikidata_typing.Snak) -> bool:
         return a == b
 
 
-def _pywikibot_reference_from_json(snak: wikidata_typing.Snak) -> pywikibot.Claim:
-    reference = pywikibot.Claim.fromJSON(site=SITE, data={"mainsnak": snak})
-    reference.isReference = True
-    assert reference.isQualifier is False
-    assert reference.isReference is True
-    return reference
-
-
 def _pywikibot_claim_from_json(snak: wikidata_typing.Snak) -> pywikibot.Claim:
     statement = {"type": "statement", "mainsnak": snak}
     claim = pywikibot.Claim.fromJSON(site=SITE, data=statement)
@@ -380,6 +372,19 @@ def _pywikibot_qualifier_to_json(qualifier: pywikibot.Claim) -> wikidata_typing.
     assert qualifier.isReference is False
     return cast(wikidata_typing.Snak, qualifier.toJSON())
 
+def _pywikibot_claim_source_from_json(
+    reference: wikidata_typing.Reference,
+) -> OrderedDict[str, list[pywikibot.Claim]]:
+    source: OrderedDict[str, list[pywikibot.Claim]] = OrderedDict()
+    for pid in reference["snaks-order"]:
+        for snak in reference["snaks"][pid]:
+            claim = pywikibot.Claim.fromJSON(site=SITE, data={"mainsnak": snak})
+            claim.isReference = True
+            if pid not in source:
+                source[pid] = []
+            source[pid].append(claim)
+    return source
+
 
 @dataclass
 class ProcessState:
@@ -410,25 +415,34 @@ def _property_snakvalue(
 
 def _resolve_object_bnode_reference(
     state: ProcessState, object: BNode
-) -> OrderedDict[str, list[pywikibot.Claim]]:
-    source: OrderedDict[str, list[pywikibot.Claim]] = OrderedDict()
+) -> wikidata_typing.Reference:
+    reference: wikidata_typing.Reference = {
+        "snaks": {},
+        "snaks-order": [],
+    }
 
-    def add_reference(snak: wikidata_typing.Snak) -> None:
-        pid = snak["property"]
-        if pid not in source:
-            source[pid] = []
-        claim = _pywikibot_reference_from_json(snak)
-        source[pid].append(claim)
+    def add_reference(pid: str, value: wikidata_typing.DataValue) -> None:
+        snak = _property_snakvalue(state=state, pid=pid, value=value)
+
+        if pid not in reference["snaks"] and pid not in reference["snaks-order"]:
+            reference["snaks"][pid] = []
+            reference["snaks-order"].append(pid)
+
+        assert pid == snak["property"]
+        assert pid in reference["snaks"]
+        assert pid in reference["snaks-order"]
+
+        reference["snaks"][pid].append(snak)
 
     for pr_name, pr_object in _predicate_ns_objects(state.graph, object, PR):
         target = _resolve_object(state.graph, pr_object)
-        add_reference(snak=_property_snakvalue(state=state, pid=pr_name, value=target))
+        add_reference(pid=pr_name, value=target)
 
     for prv_name, prv_object in _predicate_ns_objects(state.graph, object, PRV):
         target = _resolve_object(state.graph, prv_object)
-        add_reference(snak=_property_snakvalue(state=state, pid=prv_name, value=target))
+        add_reference(pid=prv_name, value=target)
 
-    return source
+    return reference
 
 
 def _claim_uri(claim: pywikibot.Claim) -> str:
@@ -747,7 +761,8 @@ def process_graph(
 
         elif predicate == PROV.wasDerivedFrom or predicate == PROV.wasOnlyDerivedFrom:
             assert isinstance(object, BNode)
-            source = _resolve_object_bnode_reference(state, object)
+            reference = _resolve_object_bnode_reference(state, object)
+            source = _pywikibot_claim_source_from_json(reference)
             prev_sources = claim.sources.copy()
             if predicate == PROV.wasOnlyDerivedFrom:
                 claim.sources = [source]
