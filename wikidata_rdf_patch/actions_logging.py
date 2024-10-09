@@ -18,7 +18,8 @@ class Formatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         levelname = _actions_log_level(record.levelno)
         title = f"{record.module}.{record.funcName}"
-        return f"::{levelname} file={record.filename},line={record.lineno},title={title}::{record.msg}"
+        message = record.getMessage()
+        return f"::{levelname} file={record.filename},line={record.lineno},title={title}::{message}"
 
 
 handler = logging.StreamHandler()
