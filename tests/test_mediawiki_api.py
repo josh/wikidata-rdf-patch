@@ -2,7 +2,10 @@ import os
 
 import pytest
 
+import wikidata_rdf_patch.actions_logging as actions_logging
 import wikidata_rdf_patch.mediawiki_api as mediawiki_api
+
+actions_logging.setup()
 
 WIKIDATA_USERNAME = os.environ.get("WIKIDATA_USERNAME", "")
 WIKIDATA_PASSWORD = os.environ.get("WIKIDATA_PASSWORD", "")

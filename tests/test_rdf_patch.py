@@ -1,6 +1,9 @@
 from io import StringIO
 
+import wikidata_rdf_patch.actions_logging as actions_logging
 from wikidata_rdf_patch.rdf_patch import process_graph
+
+actions_logging.setup()
 
 
 def test_change_statement_rank() -> None:

@@ -5,10 +5,12 @@ from typing import TextIO
 import click
 from tqdm import tqdm
 
+import wikidata_rdf_patch.actions_logging as actions_logging
 from wikidata_rdf_patch import mediawiki_api
 
 from .rdf_patch import fetch_page_qids, process_graph
 
+actions_logging.setup()
 logger = logging.getLogger("wikidata-rdf-patch")
 
 
