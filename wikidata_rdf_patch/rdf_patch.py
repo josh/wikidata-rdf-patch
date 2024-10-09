@@ -372,6 +372,7 @@ def _pywikibot_qualifier_to_json(qualifier: pywikibot.Claim) -> wikidata_typing.
     assert qualifier.isReference is False
     return cast(wikidata_typing.Snak, qualifier.toJSON())
 
+
 def _pywikibot_claim_source_from_json(
     reference: wikidata_typing.Reference,
 ) -> OrderedDict[str, list[pywikibot.Claim]]:
