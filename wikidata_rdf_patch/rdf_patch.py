@@ -436,7 +436,17 @@ def _datavalue_equals(
         else:
             return False
     elif a["type"] == "quantity" and b["type"] == "quantity":
+        a_unitless = (
+            a["value"].get("unit") == "1"
+            or a["value"].get("unit") == "https://www.wikidata.org/wiki/Q199"
+        )
+        b_unitless = (
+            b["value"].get("unit") == "1"
+            or b["value"].get("unit") == "https://www.wikidata.org/wiki/Q199"
+        )
         if "upperBound" in a["value"] and "upperBound" not in b["value"]:
+            return a["value"]["amount"] == b["value"]["amount"]
+        elif a_unitless and b_unitless:
             return a["value"]["amount"] == b["value"]["amount"]
         else:
             return a == b
@@ -706,13 +716,19 @@ def _update_statement(
             assert isinstance(object, URIRef)
             statement["rank"] = _RANKS[str(object)]
 
-        elif predicate == PROV.wasDerivedFrom or predicate == PROV.wasOnlyDerivedFrom:
+        elif predicate == PROV.wasDerivedFrom:
             assert isinstance(object, BNode)
             references = _statement_references(statement)
             reference = _resolve_object_bnode_reference(state, object)
-            if predicate == PROV.wasOnlyDerivedFrom:
-                references.clear()
             if not _references_contains(references, reference):
+                references.append(reference)
+
+        elif predicate == PROV.wasOnlyDerivedFrom:
+            assert isinstance(object, BNode)
+            references = _statement_references(statement)
+            reference = _resolve_object_bnode_reference(state, object)
+            if len(references) != 1 or not _reference_equals(references[0], reference):
+                references.clear()
                 references.append(reference)
 
         elif predicate == WIKIDATABOTS.editSummary:
@@ -747,6 +763,7 @@ def _update_item(
                 "property": predicate_local_name,
             }
             statement = _new_statement(qid, novalue_snak)
+            # TODO: Extract function to build new statement and append it here
             _item_property_claims(item, pid).append(statement)
             _update_statement(
                 state=state,
@@ -757,6 +774,7 @@ def _update_item(
             assert statement["mainsnak"] != novalue_snak
 
         elif predicate == WIKIDATABOTS.editSummary:
+            # TODO: Append to edit summary set
             state.edit_summaries[qid] = object.toPython()
 
         else:
@@ -809,12 +827,6 @@ def process_graph(
                 statement_subject=subject,
                 statement=claim,
             )
-
-        elif subject == WIKIDATABOTS.testSubject:
-            assert isinstance(subject, URIRef)
-            for rdf_object in graph.objects(subject, WIKIDATABOTS.assertValue):
-                assert isinstance(rdf_object, AnyRDFObject)
-                assert _resolve_object(graph, rdf_object)
 
         else:
             logger.error("NotImplemented: Unknown subject: %s", subject)
