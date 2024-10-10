@@ -209,7 +209,7 @@ def _resolve_object_bnode_time_value(
         value_dt = value.toPython()  # type: ignore
         if not isinstance(value_dt, datetime.datetime):
             value_dt = datetime.datetime.fromisoformat(value_dt)
-        data["time"] = value_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        data["time"] = value_dt.strftime("+%Y-%m-%dT%H:%M:%SZ")
     if precision:
         data["precision"] = precision.toPython()  # type: ignore
     if timezone:
@@ -290,7 +290,7 @@ def _resolve_object_literal(
         return {
             "type": "time",
             "value": {
-                "time": object.toPython().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "time": object.toPython().strftime("+%Y-%m-%dT%H:%M:%SZ"),
                 "precision": 11,
                 "after": 0,
                 "before": 0,

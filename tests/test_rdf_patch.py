@@ -324,5 +324,5 @@ def test_update_statement_reference() -> None:
     assert claims[0]["references"][0]["snaks"]["P813"][0]["datavalue"]["type"] == "time"
     assert (
         claims[0]["references"][0]["snaks"]["P813"][0]["datavalue"]["value"]["time"]
-        == "2024-01-01T00:00:00Z"
+        == "+2024-01-01T00:00:00Z"
     )
