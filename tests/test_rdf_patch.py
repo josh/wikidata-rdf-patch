@@ -12,8 +12,8 @@ def test_item_wdt_add_monolingualtext() -> None:
     """
     edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
-    (item, claims, _) = edits[0]
-    assert item["id"] == "Q115569934"
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q115569934"
     assert len(claims) == 1
     claim = claims[0]
     assert claim["id"].startswith("Q115569934$")
@@ -40,8 +40,8 @@ def test_item_wdt_add_commonsmediafile() -> None:
     """
     edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
-    (item, claims, _) = edits[0]
-    assert item["id"] == "Q115569934"
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q115569934"
     assert len(claims) == 1
     claim = claims[0]
     assert claim["id"].startswith("Q115569934$")
@@ -70,8 +70,8 @@ def test_item_wdt_add_geocoordinate() -> None:
     """
     edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
-    (item, claims, _) = edits[0]
-    assert item["id"] == "Q115569934"
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q115569934"
     assert len(claims) == 1
     claim = claims[0]
     assert claim["id"].startswith("Q115569934$")
@@ -104,8 +104,8 @@ def test_item_wdt_add_item() -> None:
     """
     edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
-    (item, claims, _) = edits[0]
-    assert item["id"] == "Q115569934"
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q115569934"
     assert len(claims) == 1
     claim = claims[0]
     assert claim["id"].startswith("Q115569934$")
@@ -133,8 +133,8 @@ def test_item_wdt_add_quantity() -> None:
     """
     edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
-    (item, claims, _) = edits[0]
-    assert item["id"] == "Q115569934"
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q115569934"
     assert len(claims) == 1
     claim = claims[0]
     assert claim["id"].startswith("Q115569934$")
@@ -163,8 +163,8 @@ def test_item_wdt_add_string() -> None:
     """
     edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
-    (item, claims, _) = edits[0]
-    assert item["id"] == "Q115569934"
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q115569934"
     assert len(claims) == 1
     claim = claims[0]
     assert claim["id"].startswith("Q115569934$")
@@ -190,8 +190,8 @@ def test_item_wdt_add_time() -> None:
     """
     edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
-    (item, claims, _) = edits[0]
-    assert item["id"] == "Q115569934"
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q115569934"
     assert len(claims) == 1
     claim = claims[0]
     assert claim["id"].startswith("Q115569934$")
@@ -225,8 +225,8 @@ def test_item_wdt_add_url() -> None:
     """
     edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
-    (item, claims, _) = edits[0]
-    assert item["id"] == "Q115569934"
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q115569934"
     assert len(claims) == 1
     claim = claims[0]
     assert claim["id"].startswith("Q115569934$")
@@ -252,8 +252,8 @@ def test_item_wdt_add_externalid() -> None:
     """
     edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
-    (item, claims, _) = edits[0]
-    assert item["id"] == "Q115569934"
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q115569934"
     assert len(claims) == 1
     claim = claims[0]
     assert claim["id"].startswith("Q115569934$")
@@ -282,14 +282,14 @@ def test_item_wdt_update_deprecated() -> None:
     assert len(edits) == 0
 
 
-def test_item_p_add_string() -> None:
+def test_item_ps_add_string() -> None:
     triples = """
         wd:Q115569934 p:P370 [ ps:P370 "Hello world!" ].
     """
     edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
-    (item, claims, _) = edits[0]
-    assert item["id"] == "Q115569934"
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q115569934"
     assert len(claims) == 1
     claim = claims[0]
     assert claim["id"].startswith("Q115569934$")
@@ -301,14 +301,19 @@ def test_item_p_add_string() -> None:
     assert claim["mainsnak"]["datavalue"]["value"] == "Hello world!"
 
 
-def test_item_p_add_preferred_string() -> None:
+def test_item_ps_add_preferred_string() -> None:
     triples = """
-        wd:Q115569934 p:P370 [ wikibase:rank wikibase:PreferredRank ; ps:P370 "Hello world!" ].
+        wd:Q115569934 p:P370 [
+          wikibase:rank wikibase:PreferredRank ;
+          ps:P370 "Hello world!";
+          wikidatabots:editSummary "Added preferred string"
+        ].
     """
     edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
-    (item, claims, _) = edits[0]
-    assert item["id"] == "Q115569934"
+    (qid, _, claims, summary) = edits[0]
+    assert qid == "Q115569934"
+    assert summary == "Added preferred string"
     assert len(claims) == 1
     claim = claims[0]
     assert claim["id"].startswith("Q115569934$")
@@ -320,6 +325,184 @@ def test_item_p_add_preferred_string() -> None:
     assert claim["mainsnak"]["datavalue"]["value"] == "Hello world!"
 
 
+def test_item_ps_pq_add_string_time() -> None:
+    triples = """
+        wd:Q115569934 p:P370 [
+          ps:P370 "Hello world!" ;
+          pq:P585 "1991-11-25T00:00:00Z"^^xsd:dateTime
+        ].
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 1
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q115569934"
+    assert len(claims) == 1
+    claim = claims[0]
+    assert claim["id"].startswith("Q115569934$")
+    assert claim["id"] != "Q115569934$4874d203-4feb-def9-b19d-748313b1f9fc"
+    assert claim["rank"] == "normal"
+    assert claim["mainsnak"]["snaktype"] == "value"
+    assert claim["mainsnak"]["property"] == "P370"
+    assert claim["mainsnak"]["datavalue"]["type"] == "string"
+    assert claim["mainsnak"]["datavalue"]["value"] == "Hello world!"
+    qualifier = claim["qualifiers"]["P585"][0]
+    assert qualifier["snaktype"] == "value"
+    assert qualifier["datavalue"]["type"] == "time"
+    assert qualifier["datavalue"]["value"]["time"] == "+1991-11-25T00:00:00Z"
+    assert qualifier["datavalue"]["value"]["precision"] == 11
+    assert qualifier["datavalue"]["value"]["timezone"] == 0
+    assert (
+        qualifier["datavalue"]["value"]["calendarmodel"]
+        == "http://www.wikidata.org/entity/Q1985727"
+    )
+
+
+def test_item_ps_pq_add_externalid_url() -> None:
+    triples = """
+        wd:Q115569934 p:P2536 [
+          ps:P2536 "67890" ;
+          pq:P854 <http://example.org/>
+        ].
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 1
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q115569934"
+    assert len(claims) == 1
+    claim = claims[0]
+    assert claim["id"].startswith("Q115569934$")
+    assert claim["id"] != "Q115569934$82f9bf82-4463-35e5-7956-0a3a80b1e58b"
+    assert claim["mainsnak"]["snaktype"] == "value"
+    assert claim["mainsnak"]["property"] == "P2536"
+    assert claim["mainsnak"]["datatype"] == "external-id"
+    assert claim["mainsnak"]["datavalue"]["type"] == "string"
+    assert claim["mainsnak"]["datavalue"]["value"] == "67890"
+    qualifier = claim["qualifiers"]["P854"][0]
+    assert qualifier["snaktype"] == "value"
+    assert qualifier["datavalue"]["type"] == "string"
+    assert qualifier["datavalue"]["value"] == "http://example.org/"
+
+
+def test_item_ps_add_monolingualtext() -> None:
+    triples = """
+        wd:Q115569934 p:P1450 [ ps:P1450 "hello"@en ].
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 1
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q115569934"
+    assert len(claims) == 1
+    claim = claims[0]
+    assert claim["id"].startswith("Q115569934$")
+    assert claim["id"] != "Q115569934$47a71564-44cc-83f4-f53e-352c21c0f983"
+    assert claim["mainsnak"]["snaktype"] == "value"
+    assert claim["mainsnak"]["property"] == "P1450"
+    assert claim["mainsnak"]["datatype"] == "monolingualtext"
+    assert claim["mainsnak"]["datavalue"]["type"] == "monolingualtext"
+    assert claim["mainsnak"]["datavalue"]["value"]["text"] == "hello"
+    assert claim["mainsnak"]["datavalue"]["value"]["language"] == "en"
+
+
+def test_item_ps_add_url() -> None:
+    triples = """
+        wd:Q115569934 p:P855 [ ps:P855 <http://example.org/> ].
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 1
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q115569934"
+    assert len(claims) == 1
+    claim = claims[0]
+    assert claim["id"].startswith("Q115569934$")
+    assert claim["id"] != "Q115569934$01b174fc-49a8-650c-891f-aa77224c1794"
+    assert claim["mainsnak"]["snaktype"] == "value"
+    assert claim["mainsnak"]["property"] == "P855"
+    assert claim["mainsnak"]["datatype"] == "url"
+    assert claim["mainsnak"]["datavalue"]["type"] == "string"
+    assert claim["mainsnak"]["datavalue"]["value"] == "http://example.org/"
+
+
+def test_item_ps_add_externalid() -> None:
+    triples = """
+        wd:Q115569934 p:P2536 [ ps:P2536 "67890" ].
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 1
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q115569934"
+    assert len(claims) == 1
+    claim = claims[0]
+    assert claim["id"].startswith("Q115569934$")
+    assert claim["id"] != "Q115569934$82f9bf82-4463-35e5-7956-0a3a80b1e58b"
+    assert claim["mainsnak"]["snaktype"] == "value"
+    assert claim["mainsnak"]["property"] == "P2536"
+    assert claim["mainsnak"]["datatype"] == "external-id"
+    assert claim["mainsnak"]["datavalue"]["type"] == "string"
+    assert claim["mainsnak"]["datavalue"]["value"] == "67890"
+
+
+def test_item_ps_add_time() -> None:
+    triples = """
+        wd:Q115569934 p:P578 [ ps:P578 "2012-10-30T00:00:00Z"^^xsd:dateTime ].
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 1
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q115569934"
+    assert len(claims) == 1
+    claim = claims[0]
+    assert claim["id"].startswith("Q115569934$")
+    assert claim["id"] != "Q115569934$b2ad899e-42f0-9928-e69e-853715f8d6e6"
+    assert claim["mainsnak"]["snaktype"] == "value"
+    assert claim["mainsnak"]["property"] == "P578"
+    assert claim["mainsnak"]["datatype"] == "time"
+    assert claim["mainsnak"]["datavalue"]["type"] == "time"
+    assert claim["mainsnak"]["datavalue"]["value"]["time"] == "+2012-10-30T00:00:00Z"
+    assert claim["mainsnak"]["datavalue"]["value"]["timezone"] == 0
+    assert claim["mainsnak"]["datavalue"]["value"]["before"] == 0
+    assert claim["mainsnak"]["datavalue"]["value"]["after"] == 0
+    assert claim["mainsnak"]["datavalue"]["value"]["precision"] == 11
+    assert (
+        claim["mainsnak"]["datavalue"]["value"]["calendarmodel"]
+        == "http://www.wikidata.org/entity/Q1985727"
+    )
+
+
+def test_item_psv_add_time() -> None:
+    triples = """
+        wd:Q115569934 p:P578 [
+          psv:P578 [
+            a wikibase:TimeValue ;
+            wikibase:timeValue "2012-10-30T00:00:00Z"^^xsd:dateTime ;
+            wikibase:timePrecision "11"^^xsd:integer ;
+            wikibase:timeTimezone "0"^^xsd:integer ;
+            wikibase:timeCalendarModel <http://www.wikidata.org/entity/Q1985727>
+          ]
+        ].
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 1
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q115569934"
+    assert len(claims) == 1
+    claim = claims[0]
+    assert claim["id"].startswith("Q115569934$")
+    assert claim["id"] != "Q115569934$b2ad899e-42f0-9928-e69e-853715f8d6e6"
+    assert claim["mainsnak"]["snaktype"] == "value"
+    assert claim["mainsnak"]["property"] == "P578"
+    assert claim["mainsnak"]["datatype"] == "time"
+    assert claim["mainsnak"]["datavalue"]["type"] == "time"
+    assert claim["mainsnak"]["datavalue"]["value"]["time"] == "+2012-10-30T00:00:00Z"
+    assert claim["mainsnak"]["datavalue"]["value"]["timezone"] == 0
+    assert claim["mainsnak"]["datavalue"]["value"]["before"] == 0
+    assert claim["mainsnak"]["datavalue"]["value"]["after"] == 0
+    assert claim["mainsnak"]["datavalue"]["value"]["precision"] == 11
+    assert (
+        claim["mainsnak"]["datavalue"]["value"]["calendarmodel"]
+        == "http://www.wikidata.org/entity/Q1985727"
+    )
+
+
 def test_statement_rank_change() -> None:
     triples = """
       wds:Q172241-6B571F20-7732-47E1-86B2-1DFA6D0A15F5 wikibase:rank wikibase:DeprecatedRank;
@@ -327,8 +510,8 @@ def test_statement_rank_change() -> None:
     """
     edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
-    (item, claims, summary) = edits[0]
-    assert item["id"] == "Q172241"
+    (qid, _, claims, summary) = edits[0]
+    assert qid == "Q172241"
     assert summary == "Changed rank"
     assert len(claims) == 1
     claim = claims[0]
@@ -347,12 +530,14 @@ def test_statement_rank_noop() -> None:
 
 def test_statement_ps_change() -> None:
     triples = """
-      wds:Q115569934-4874d203-4feb-def9-b19d-748313b1f9fc ps:P370 "Goodbye world!".
+      wds:Q115569934-4874d203-4feb-def9-b19d-748313b1f9fc ps:P370 "Goodbye world!";
+        wikidatabots:editSummary "Changed string".
     """
     edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
-    (item, claims, _) = edits[0]
-    assert item["id"] == "Q115569934"
+    (qid, _, claims, summary) = edits[0]
+    assert qid == "Q115569934"
+    assert summary == "Changed string"
     assert len(claims) == 1
     claim = claims[0]
     assert claim["id"] == "Q115569934$4874d203-4feb-def9-b19d-748313b1f9fc"
@@ -397,8 +582,8 @@ def test_statement_psv_change() -> None:
     """
     edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
-    (item, claims, _) = edits[0]
-    assert item["id"] == "Q115569934"
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q115569934"
     assert len(claims) == 1
     claim = claims[0]
     assert claim["id"] == "Q115569934$b40fcbdc-45c7-5aff-afd9-edafac78dfd4"
@@ -434,8 +619,8 @@ def test_statement_pq_add() -> None:
     """
     edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
-    (item, claims, _) = edits[0]
-    assert item["id"] == "Q42"
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q42"
     assert len(claims) == 1
     claim = claims[0]
     assert claim["id"] == "q42$b88670f8-456b-3ecb-cf3d-2bca2cf7371e"
@@ -471,8 +656,8 @@ def test_statement_pqv_add() -> None:
     """
     edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
-    (item, claims, _) = edits[0]
-    assert item["id"] == "Q42"
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q42"
     assert len(claims) == 1
     claim = claims[0]
     assert claim["id"] == "q42$b88670f8-456b-3ecb-cf3d-2bca2cf7371e"
@@ -508,8 +693,8 @@ def test_statement_pqe_add() -> None:
     """
     edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
-    (item, claims, _) = edits[0]
-    assert item["id"] == "Q42"
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q42"
     assert len(claims) == 1
     claim = claims[0]
     assert claim["id"] == "q42$b88670f8-456b-3ecb-cf3d-2bca2cf7371e"
@@ -545,8 +730,8 @@ def test_statement_pqve_update() -> None:
     """
     edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
-    (item, claims, _) = edits[0]
-    assert item["id"] == "Q42"
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q42"
     assert len(claims) == 1
     claim = claims[0]
     assert claim["id"] == "q42$b88670f8-456b-3ecb-cf3d-2bca2cf7371e"
@@ -582,8 +767,8 @@ def test_statement_pqe_remove() -> None:
     """
     edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
-    (item, claims, _) = edits[0]
-    assert item["id"] == "Q42"
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q42"
     assert len(claims) == 1
     claim = claims[0]
     assert claim["id"] == "q42$b88670f8-456b-3ecb-cf3d-2bca2cf7371e"
@@ -600,8 +785,8 @@ def test_statement_prov_wasderivedfrom_add() -> None:
     """
     edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
-    (item, claims, _) = edits[0]
-    assert item["id"] == "Q115569934"
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q115569934"
     assert len(claims) == 1
     claim = claims[0]
     assert claim["id"] == "Q115569934$4874d203-4feb-def9-b19d-748313b1f9fc"
@@ -642,8 +827,8 @@ def test_statement_prov_wasonlyderivedfrom_add() -> None:
     """
     edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
-    (item, claims, _) = edits[0]
-    assert item["id"] == "Q115569934"
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q115569934"
     assert len(claims) == 1
     claim = claims[0]
     assert claim["id"] == "Q115569934$4874d203-4feb-def9-b19d-748313b1f9fc"

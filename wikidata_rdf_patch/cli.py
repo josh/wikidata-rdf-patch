@@ -96,11 +96,11 @@ def main(
         return
 
     with logging_redirect_tqdm():
-        for item, claims, summary in pbar:
+        for qid, lastrevid, claims, summary in pbar:
             if summary:
-                logger.info(f"Edit {item['id']}: {summary}")
+                logger.info(f"Edit {qid}: {summary}")
             else:
-                logger.info(f"Edit {item['id']}")
+                logger.info(f"Edit {qid}")
             for statement in claims:
                 statement_id = statement["mainsnak"]["property"]
                 statement_snak = statement.get("id", "(new claim)")
@@ -113,8 +113,8 @@ def main(
 
             mediawiki_api.wbeditentity(
                 session=session,
-                qid=item["id"],
-                baserevid=item["lastrevid"],
+                qid=qid,
+                baserevid=lastrevid,
                 edit_data={"claims": claims},
                 summary=summary,
             )

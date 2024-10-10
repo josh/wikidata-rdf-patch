@@ -6,9 +6,9 @@ import re
 import urllib.parse
 import urllib.request
 import uuid
+from collections import defaultdict
 from collections.abc import Iterable, Iterator
 from copy import deepcopy
-from dataclasses import dataclass
 from typing import TextIO
 
 from rdflib import XSD, Graph
@@ -109,6 +109,8 @@ AnyRDFSubject = URIRef | BNode
 AnyRDFPredicate = URIRef
 AnyRDFObject = URIRef | BNode | Literal
 
+PropertyDatatypes = dict[str, wikidata_typing.DataType]
+
 
 def _graph_urirefs(graph: Graph) -> Iterator[URIRef]:
     for subject in graph.subjects(unique=True):
@@ -130,6 +132,12 @@ def _subjects(graph: Graph) -> Iterator[AnyRDFSubject]:
         yield subject
 
 
+def _predicates(graph: Graph, subject: AnyRDFSubject) -> Iterator[AnyRDFPredicate]:
+    for predicate in graph.predicates(subject=subject, unique=True):
+        assert isinstance(predicate, URIRef)
+        yield predicate
+
+
 def _predicate_objects(
     graph: Graph, subject: AnyRDFSubject
 ) -> Iterator[tuple[AnyRDFPredicate, AnyRDFObject]]:
@@ -143,13 +151,42 @@ def _predicate_objects(
         yield predicate, object
 
 
-def _predicate_ns_objects(
-    graph: Graph, subject: AnyRDFSubject, predicate_ns: Namespace
-) -> Iterator[tuple[str, AnyRDFObject]]:
-    for predicate, object in _predicate_objects(graph, subject):
-        _, ns, name = NS_MANAGER.compute_qname(predicate)
-        if predicate_ns == ns:
-            yield name, object
+def _objects(
+    graph: Graph, subject: AnyRDFSubject, predicate: AnyRDFPredicate
+) -> Iterator[AnyRDFObject]:
+    for object in graph.objects(subject, predicate, unique=True):
+        assert (
+            isinstance(object, URIRef)
+            or isinstance(object, BNode)
+            or isinstance(object, Literal)
+        )
+        yield object
+
+
+def _value(
+    graph: Graph, subject: AnyRDFSubject, predicate: AnyRDFPredicate
+) -> AnyRDFObject | None:
+    objects = list(_objects(graph, subject, predicate))
+    if len(objects) == 1:
+        return objects[0]
+    elif len(objects) > 1:
+        logger.warning(f"multiple objects for {subject} {predicate}")
+        return objects[0]
+    else:
+        return None
+
+
+def _literal(
+    graph: Graph, subject: AnyRDFSubject, predicate: AnyRDFPredicate
+) -> Literal | None:
+    value = _value(graph, subject, predicate)
+    if value and isinstance(value, Literal):
+        return value
+    elif value and not isinstance(value, Literal):
+        logger.warning(f"non-literal value for {subject} {predicate}: {value}")
+        return None
+    else:
+        return None
 
 
 def _graph_empty_node(graph: Graph, object: AnyRDFObject) -> bool:
@@ -204,17 +241,14 @@ def _resolve_object_uriref(
 def _resolve_object_bnode_time_value(
     graph: Graph, object: BNode
 ) -> wikidata_typing.TimeDataValue:
-    if value := graph.value(object, WIKIBASE.timeValue):
-        assert isinstance(value, Literal)
+    if value := _literal(graph, object, WIKIBASE.timeValue):
         assert value.datatype is None or value.datatype == XSD.dateTime
-    if precision := graph.value(object, WIKIBASE.timePrecision):
-        assert isinstance(precision, Literal)
+    if precision := _literal(graph, object, WIKIBASE.timePrecision):
         assert precision.datatype == XSD.integer
         assert 0 <= precision.toPython() <= 14
-    if timezone := graph.value(object, WIKIBASE.timeTimezone):
-        assert isinstance(timezone, Literal)
+    if timezone := _literal(graph, object, WIKIBASE.timeTimezone):
         assert timezone.datatype == XSD.integer
-    if calendar_model := graph.value(object, WIKIBASE.timeCalendarModel):
+    if calendar_model := _value(graph, object, WIKIBASE.timeCalendarModel):
         assert isinstance(calendar_model, URIRef)
 
     data: wikidata_typing.TimeValue = {
@@ -226,14 +260,14 @@ def _resolve_object_bnode_time_value(
         "calendarmodel": "https://www.wikidata.org/wiki/Q1985727",
     }
     if value:
-        value_dt = value.toPython()  # type: ignore
+        value_dt = value.toPython()
         if not isinstance(value_dt, datetime.datetime):
             value_dt = datetime.datetime.fromisoformat(value_dt)
         data["time"] = value_dt.strftime("+%Y-%m-%dT%H:%M:%SZ")
     if precision:
-        data["precision"] = precision.toPython()  # type: ignore
+        data["precision"] = precision.toPython()
     if timezone:
-        data["timezone"] = timezone.toPython()  # type: ignore
+        data["timezone"] = timezone.toPython()
     if calendar_model:
         data["calendarmodel"] = str(calendar_model)
     assert data["time"] != "", "missing time value"
@@ -243,16 +277,13 @@ def _resolve_object_bnode_time_value(
 def _resolve_object_bnode_quantity_value(
     graph: Graph, object: BNode
 ) -> wikidata_typing.QuantityDataValue:
-    if amount := graph.value(object, WIKIBASE.quantityAmount):
-        assert isinstance(amount, Literal)
+    if amount := _literal(graph, object, WIKIBASE.quantityAmount):
         assert amount.datatype == XSD.decimal
-    if upper_bound := graph.value(object, WIKIBASE.quantityUpperBound):
-        assert isinstance(upper_bound, Literal)
+    if upper_bound := _literal(graph, object, WIKIBASE.quantityUpperBound):
         assert upper_bound.datatype == XSD.decimal
-    if lower_bound := graph.value(object, WIKIBASE.quantityLowerBound):
-        assert isinstance(lower_bound, Literal)
+    if lower_bound := _literal(graph, object, WIKIBASE.quantityLowerBound):
         assert lower_bound.datatype == XSD.decimal
-    if unit := graph.value(object, WIKIBASE.quantityUnit):
+    if unit := _value(graph, object, WIKIBASE.quantityUnit):
         assert isinstance(unit, URIRef)
 
     data: wikidata_typing.QuantityValue = {
@@ -274,16 +305,13 @@ def _resolve_object_bnode_quantity_value(
 def _resolve_object_bnode(
     graph: Graph, object: BNode, rdf_type: URIRef | None = None
 ) -> wikidata_typing.QuantityDataValue | wikidata_typing.TimeDataValue:
-    if not rdf_type:
-        rdf_type = graph.value(object, RDF.type)  # type: ignore
-    assert rdf_type is None or isinstance(rdf_type, URIRef)
-
-    if rdf_type == WIKIBASE.TimeValue:
+    bnode_type = rdf_type or _value(graph, object, RDF.type)
+    if bnode_type == WIKIBASE.TimeValue:
         return _resolve_object_bnode_time_value(graph, object)
-    elif rdf_type == WIKIBASE.QuantityValue:
+    elif bnode_type == WIKIBASE.QuantityValue:
         return _resolve_object_bnode_quantity_value(graph, object)
     else:
-        raise NotImplementedError(f"Unknown bnode: {rdf_type}")
+        raise NotImplementedError(f"Unknown bnode: {bnode_type}")
 
 
 def _resolve_object_literal(
@@ -355,6 +383,154 @@ def _resolve_object(graph: Graph, object: AnyRDFObject) -> wikidata_typing.DataV
         return _resolve_object_literal(object)
 
 
+def _resolve_snak(
+    graph: Graph,
+    property_datatypes: PropertyDatatypes,
+    pid: str,
+    object: AnyRDFObject,
+) -> wikidata_typing.Snak:
+    assert pid.startswith("P"), pid
+    datatype = property_datatypes[pid]
+    value = _resolve_object(graph, object)
+    assert value["type"] == wikidata_typing.ALLOWED_DATA_TYPE_VALUE_TYPES[datatype]
+    snak: wikidata_typing.SnakValue = {
+        "snaktype": "value",
+        "property": pid,
+        "datatype": datatype,
+        "datavalue": value,
+    }
+    return snak
+
+
+def _resolve_reference_snaks_order(graph: Graph, subject: AnyRDFSubject) -> list[str]:
+    snaks_order: list[str] = []
+
+    for predicate in _predicates(graph, subject):
+        predicate_prefix, predicate_local_name = _compute_qname(predicate)
+        if predicate_prefix.startswith("pr") and predicate_local_name.startswith("P"):
+            if predicate_local_name not in snaks_order:
+                snaks_order.append(predicate_local_name)
+
+    return snaks_order
+
+
+def _resolve_object_bnode_reference(
+    graph: Graph, property_datatypes: PropertyDatatypes, object: BNode
+) -> wikidata_typing.Reference:
+    snaks_order = _resolve_reference_snaks_order(graph, object)
+    snaks: dict[str, list[wikidata_typing.Snak]] = {}
+
+    for pid in snaks_order:
+        if pid not in snaks:
+            snaks[pid] = []
+
+        for pr_object in _objects(graph, object, PR[pid]):
+            snak = _resolve_snak(graph, property_datatypes, pid, pr_object)
+            snaks[pid].append(snak)
+
+        for prv_object in _objects(graph, object, PRV[pid]):
+            snak = _resolve_snak(graph, property_datatypes, pid, prv_object)
+            snaks[pid].append(snak)
+
+    assert len(snaks) > 0
+    assert len(snaks_order) > 0
+
+    reference: wikidata_typing.Reference = {
+        "snaks": snaks,
+        "snaks-order": snaks_order,
+    }
+    return reference
+
+
+def _resolve_statement_references(
+    graph: Graph, property_datatypes: PropertyDatatypes, subject: AnyRDFSubject
+) -> list[wikidata_typing.Reference]:
+    references: list[wikidata_typing.Reference] = []
+    for prov in _objects(graph, subject, PROV.wasDerivedFrom):
+        assert isinstance(prov, BNode)
+        reference = _resolve_object_bnode_reference(graph, property_datatypes, prov)
+        references.append(reference)
+    return references
+
+
+def _resolve_statement_exclusive_references(
+    graph: Graph, property_datatypes: PropertyDatatypes, subject: AnyRDFSubject
+) -> list[wikidata_typing.Reference]:
+    for prov in _objects(graph, subject, PROV.wasOnlyDerivedFrom):
+        assert isinstance(prov, BNode)
+        reference = _resolve_object_bnode_reference(graph, property_datatypes, prov)
+        return [reference]
+    return []
+
+
+def _resolve_statement_snak(
+    graph: Graph,
+    property_datatypes: PropertyDatatypes,
+    subject: AnyRDFSubject,
+    pid: str,
+) -> wikidata_typing.Snak | None:
+    if psv_object := _value(graph, subject, PSV[pid]):
+        return _resolve_snak(graph, property_datatypes, pid, psv_object)
+    elif ps_object := _value(graph, subject, PS[pid]):
+        return _resolve_snak(graph, property_datatypes, pid, ps_object)
+    return None
+
+
+_RANKS: dict[str, wikidata_typing.Rank] = {
+    WIKIBASE.NormalRank: "normal",
+    WIKIBASE.DeprecatedRank: "deprecated",
+    WIKIBASE.PreferredRank: "preferred",
+}
+
+
+def _resolve_statement_rank(
+    graph: Graph, subject: AnyRDFSubject
+) -> wikidata_typing.Rank | None:
+    if rank_uri := _value(graph, subject, WIKIBASE.rank):
+        assert isinstance(rank_uri, URIRef)
+        return _RANKS[rank_uri]
+    return None
+
+
+def _resolve_statement_qualifiers_order(
+    graph: Graph, subject: AnyRDFSubject
+) -> list[str]:
+    order: list[str] = []
+    for predicate in _predicates(graph, subject):
+        predicate_prefix, predicate_local_name = _compute_qname(predicate)
+        if predicate_prefix.startswith("pq"):
+            order.append(predicate_local_name)
+    return order
+
+
+def _resolve_statement_qualifiers(
+    graph: Graph,
+    property_datatypes: PropertyDatatypes,
+    subject: AnyRDFSubject,
+    pid: str,
+) -> list[wikidata_typing.Snak]:
+    assert pid.startswith("P"), pid
+    qualifiers: list[wikidata_typing.Snak] = []
+
+    for pqv_object in _objects(graph, subject, PQ[pid]):
+        snak = _resolve_snak(graph, property_datatypes, pid, pqv_object)
+        qualifiers.append(snak)
+
+    for pqv_object in _objects(graph, subject, PQV[pid]):
+        snak = _resolve_snak(graph, property_datatypes, pid, pqv_object)
+        qualifiers.append(snak)
+
+    if pqve_object := _value(graph, subject, PQE[pid]):
+        snak = _resolve_snak(graph, property_datatypes, pid, pqve_object)
+        qualifiers = [snak]
+
+    if pqve_object := _value(graph, subject, PQVE[pid]):
+        snak = _resolve_snak(graph, property_datatypes, pid, pqve_object)
+        qualifiers = [snak]
+
+    return qualifiers
+
+
 def _qid(qid: str) -> str:
     assert qid.startswith("Q"), qid
     return qid
@@ -363,6 +539,11 @@ def _qid(qid: str) -> str:
 def _pid(pid: str) -> str:
     assert pid.startswith("P"), pid
     return pid
+
+
+def _new_statement_id(qid: str) -> str:
+    assert qid.startswith("Q"), qid
+    return f"{qid}${uuid.uuid4()}"
 
 
 def _item_property_claims(
@@ -409,18 +590,9 @@ def _statement_references(
     return statement["references"]
 
 
-def _new_statement(
-    qid: str,
-    snak: wikidata_typing.Snak,
-    rank: wikidata_typing.Rank = "normal",
-) -> wikidata_typing.Statement:
-    assert qid.startswith("Q"), qid
-    return {
-        "id": f"{qid}${uuid.uuid4()}",
-        "type": "statement",
-        "rank": rank,
-        "mainsnak": snak,
-    }
+def _item_statements(item: wikidata_typing.Item) -> Iterator[wikidata_typing.Statement]:
+    for statements in item.get("claims", {}).values():
+        yield from statements
 
 
 def _datavalue_equals(
@@ -511,92 +683,90 @@ def _references_contains(
     return any(_reference_equals(r, b) for r in a)
 
 
-@dataclass
-class ProcessState:
-    graph: Graph
-    edit_summaries: dict[str, set[str]]
-    property_datatypes: dict[str, wikidata_typing.DataType]
-    original_items: dict[str, wikidata_typing.Item]
-    items: dict[str, wikidata_typing.Item]
+def _find_claim_guid(
+    items: dict[str, wikidata_typing.Item], guid: str
+) -> tuple[str, wikidata_typing.Statement]:
+    qid, hash = guid.split("-", 1)
+    guid = f"{qid}${hash}"
+
+    item = items[qid.upper()]
+
+    for statements in item.get("claims", {}).values():
+        for statement in statements:
+            if guid == statement["id"]:
+                return (qid.upper(), statement)
+
+    assert False, f"Can't resolve statement GUID: {guid}"
 
 
-def _resolve_snak(
-    state: ProcessState,
+def _new_statement(
+    graph: Graph,
+    property_datatypes: PropertyDatatypes,
+    qid: str,
     pid: str,
-    object: AnyRDFObject,
-) -> wikidata_typing.Snak:
+    subject: BNode,
+) -> tuple[wikidata_typing.Statement, str]:
+    assert qid.startswith("Q"), qid
     assert pid.startswith("P"), pid
-    datatype = state.property_datatypes[pid]
-    value = _resolve_object(state.graph, object)
-    assert value["type"] == wikidata_typing.ALLOWED_DATA_TYPE_VALUE_TYPES[datatype]
-    # TODO: Support SnakSomeValue and SnakNoValue
-    snak: wikidata_typing.SnakValue = {
-        "snaktype": "value",
-        "property": pid,
-        "datatype": datatype,
-        "datavalue": value,
+
+    edit_summary: str = ""
+
+    snak = _resolve_statement_snak(graph, property_datatypes, subject, pid)
+    assert snak, f"Can't resolve snak for {qid}/{pid}"
+
+    rank = _resolve_statement_rank(graph, subject) or "normal"
+
+    qualifiers_order = _resolve_statement_qualifiers_order(graph, subject)
+    qualifiers: dict[str, list[wikidata_typing.Snak]] = {}
+    for qualifier_pid in qualifiers_order:
+        qualifiers[qualifier_pid] = _resolve_statement_qualifiers(
+            graph, property_datatypes, subject, qualifier_pid
+        )
+
+    references = _resolve_statement_exclusive_references(
+        graph, property_datatypes, subject
+    ) or _resolve_statement_references(graph, property_datatypes, subject)
+
+    if edit_summary_literal := _literal(graph, subject, WIKIDATABOTS.editSummary):
+        edit_summary = edit_summary_literal.toPython()
+
+    statement: wikidata_typing.Statement = {
+        "id": _new_statement_id(qid),
+        "type": "statement",
+        "rank": rank,
+        "mainsnak": snak,
     }
-    return snak
+
+    if len(qualifiers_order) > 0:
+        statement["qualifiers"] = qualifiers
+        statement["qualifiers-order"] = qualifiers_order
+
+    if len(references) > 0:
+        statement["references"] = references
+
+    return statement, edit_summary
 
 
-def _resolve_object_bnode_reference(
-    state: ProcessState, object: BNode
-) -> wikidata_typing.Reference:
-    reference: wikidata_typing.Reference = {
-        "snaks": {},
-        "snaks-order": [],
-    }
+def _detect_changed_claims(
+    original_items: dict[str, wikidata_typing.Item],
+    updated_items: dict[str, wikidata_typing.Item],
+) -> Iterator[tuple[str, wikidata_typing.Statement]]:
+    original_claims_by_guid: dict[str, wikidata_typing.Statement] = {}
+    for item in original_items.values():
+        for statement in _item_statements(item):
+            guid = statement["id"]
+            assert guid
+            original_claims_by_guid[guid] = statement
 
-    def add_reference(pid: str, object: AnyRDFObject) -> None:
-        snak = _resolve_snak(state, pid, object)
-
-        if pid not in reference["snaks"] and pid not in reference["snaks-order"]:
-            reference["snaks"][pid] = []
-            reference["snaks-order"].append(pid)
-
-        assert pid == snak["property"]
-        assert pid in reference["snaks"]
-        assert pid in reference["snaks-order"]
-
-        reference["snaks"][pid].append(snak)
-
-    for pr_name, pr_object in _predicate_ns_objects(state.graph, object, PR):
-        add_reference(pr_name, pr_object)
-
-    for prv_name, prv_object in _predicate_ns_objects(state.graph, object, PRV):
-        add_reference(prv_name, prv_object)
-
-    assert len(reference["snaks"]) > 0
-    assert len(reference["snaks-order"]) > 0
-
-    return reference
-
-
-def _prefetch_property_datatypes(
-    graph: Graph, user_agent: str
-) -> dict[str, wikidata_typing.DataType]:
-    pids: set[str] = set()
-
-    for uri in _graph_urirefs(graph):
-        _, local_name = _compute_qname(uri)
-        if re.match(r"^P\d+$", local_name):
-            pids.add(local_name)
-
-    if len(pids) == 0:
-        logger.debug("No properties prefetched")
-        return {}
-
-    entities = mediawiki_api.wbgetentities(
-        ids=sorted(pids),
-        user_agent=user_agent,
-    )
-
-    datatypes: dict[str, wikidata_typing.DataType] = {}
-    for pid, entity in entities.items():
-        assert entity["type"] == "property"
-        datatypes[pid] = entity["datatype"]
-    logger.debug("Prefetched %d property datatypes", len(datatypes))
-    return datatypes
+    for item in updated_items.values():
+        for statement in _item_statements(item):
+            guid = statement.get("id", "")
+            if not guid:
+                yield item["id"], statement
+            elif guid not in original_claims_by_guid:
+                yield item["id"], statement
+            elif statement != original_claims_by_guid[guid]:
+                yield item["id"], statement
 
 
 def _prefetch_items(graph: Graph, user_agent: str) -> dict[str, wikidata_typing.Item]:
@@ -628,187 +798,157 @@ def _prefetch_items(graph: Graph, user_agent: str) -> dict[str, wikidata_typing.
     return items
 
 
-def _find_claim_guid(
-    state: ProcessState, guid: str
-) -> tuple[str, wikidata_typing.Statement]:
-    qid, hash = guid.split("-", 1)
-    guid = f"{qid}${hash}"
+def _prefetch_property_datatypes(graph: Graph, user_agent: str) -> PropertyDatatypes:
+    pids: set[str] = set()
 
-    item = state.items[qid.upper()]
+    for uri in _graph_urirefs(graph):
+        _, local_name = _compute_qname(uri)
+        if re.match(r"^P\d+$", local_name):
+            pids.add(local_name)
 
-    for statements in item.get("claims", {}).values():
-        for statement in statements:
-            if guid == statement["id"]:
-                return (qid.upper(), statement)
+    if len(pids) == 0:
+        logger.debug("No properties prefetched")
+        return {}
 
-    assert False, f"Can't resolve statement GUID: {guid}"
+    entities = mediawiki_api.wbgetentities(
+        ids=sorted(pids),
+        user_agent=user_agent,
+    )
 
-
-_RANKS: dict[str, wikidata_typing.Rank] = {
-    str(WIKIBASE.NormalRank): "normal",
-    str(WIKIBASE.DeprecatedRank): "deprecated",
-    str(WIKIBASE.PreferredRank): "preferred",
-}
-
-
-def _item_statements(item: wikidata_typing.Item) -> Iterator[wikidata_typing.Statement]:
-    for statements in item.get("claims", {}).values():
-        yield from statements
-
-
-def _detect_changed_claims(
-    state: ProcessState,
-) -> Iterator[tuple[wikidata_typing.Item, wikidata_typing.Statement]]:
-    original_claims_by_guid: dict[str, wikidata_typing.Statement] = {}
-    for item in state.original_items.values():
-        for statement in _item_statements(item):
-            guid = statement["id"]
-            assert guid
-            original_claims_by_guid[guid] = statement
-
-    for item in state.items.values():
-        for statement in _item_statements(item):
-            guid = statement.get("id", "")
-            if not guid:
-                yield item, statement
-            elif guid not in original_claims_by_guid:
-                yield item, statement
-            elif statement != original_claims_by_guid[guid]:
-                yield item, statement
+    datatypes: PropertyDatatypes = {}
+    for pid, entity in entities.items():
+        assert entity["type"] == "property"
+        datatypes[pid] = entity["datatype"]
+    logger.debug("Prefetched %d property datatypes", len(datatypes))
+    return datatypes
 
 
 def _update_statement(
-    state: ProcessState,
+    graph: Graph,
+    property_datatypes: PropertyDatatypes,
     qid: str,
     statement_subject: AnyRDFSubject,
     statement: wikidata_typing.Statement,
+    edit_summaries: set[str],
 ) -> None:
     assert qid.startswith("Q"), qid
 
-    for predicate, object in _predicate_objects(state.graph, statement_subject):
+    if rank := _resolve_statement_rank(graph, statement_subject):
+        statement["rank"] = rank
+
+    if snak := _resolve_statement_snak(
+        graph,
+        property_datatypes,
+        statement_subject,
+        statement["mainsnak"]["property"],
+    ):
+        if not _snak_equals(statement["mainsnak"], snak):
+            statement["mainsnak"] = snak
+
+    if new_references := _resolve_statement_references(
+        graph, property_datatypes, statement_subject
+    ):
+        assert len(new_references) > 0
+        existing_references = _statement_references(statement)
+        for new_reference in new_references:
+            if not _references_contains(existing_references, new_reference):
+                existing_references.append(new_reference)
+
+    if new_references := _resolve_statement_exclusive_references(
+        graph, property_datatypes, statement_subject
+    ):
+        assert len(new_references) == 1
+        existing_references = _statement_references(statement)
+        if len(existing_references) != 1 or not _reference_equals(
+            existing_references[0], new_references[0]
+        ):
+            statement["references"] = new_references
+
+    for predicate, object in _predicate_objects(graph, statement_subject):
         predicate_prefix, predicate_local_name = _compute_qname(predicate)
 
         if predicate_prefix == "pq" or predicate_prefix == "pqv":
             pid = _pid(predicate_local_name)
-            snak = _resolve_snak(state, pid, object)
+            snak = _resolve_snak(graph, property_datatypes, pid, object)
             qualifiers = _statement_property_qualifiers(statement, pid)
             if not _any_snak_equals(qualifiers, snak):
                 qualifiers.append(snak)
 
         elif predicate_prefix == "pqe" or predicate_prefix == "pqve":
             pid = _pid(predicate_local_name)
-            if _graph_empty_node(state.graph, object):
+            if _graph_empty_node(graph, object):
                 _delete_statement_property_qualifiers(statement, pid)
             else:
-                snak = _resolve_snak(state, pid, object)
+                snak = _resolve_snak(graph, property_datatypes, pid, object)
                 qualifiers = _statement_property_qualifiers(statement, pid)
                 if not _only_snak_equals(qualifiers, snak):
                     qualifiers.clear()
                     qualifiers.append(snak)
 
-        elif predicate_prefix == "ps" or predicate_prefix == "psv":
-            pid = _pid(predicate_local_name)
-            snak = _resolve_snak(state, pid, object)
-            if not _snak_equals(statement["mainsnak"], snak):
-                statement["mainsnak"] = snak
-
-        elif predicate == WIKIBASE.rank:
-            assert isinstance(object, URIRef)
-            statement["rank"] = _RANKS[str(object)]
-
-        elif predicate == PROV.wasDerivedFrom:
-            assert isinstance(object, BNode)
-            references = _statement_references(statement)
-            reference = _resolve_object_bnode_reference(state, object)
-            if not _references_contains(references, reference):
-                references.append(reference)
-
-        elif predicate == PROV.wasOnlyDerivedFrom:
-            assert isinstance(object, BNode)
-            references = _statement_references(statement)
-            reference = _resolve_object_bnode_reference(state, object)
-            if len(references) != 1 or not _reference_equals(references[0], reference):
-                references.clear()
-                references.append(reference)
-
-        elif predicate == WIKIDATABOTS.editSummary:
-            if qid not in state.edit_summaries:
-                state.edit_summaries[qid] = set()
-            state.edit_summaries[qid].add(object.toPython())
-
-        else:
-            logger.error("NotImplemented: Unknown wds triple: %s %s", predicate, object)
+    if edit_summary_literal := _literal(
+        graph, statement_subject, WIKIDATABOTS.editSummary
+    ):
+        edit_summaries.add(edit_summary_literal.toPython())
 
 
 def _update_item(
-    state: ProcessState,
-    qid: str,
+    graph: Graph,
+    property_datatypes: PropertyDatatypes,
+    item: wikidata_typing.Item,
     item_subject: AnyRDFSubject,
+    edit_summaries: set[str],
 ) -> None:
-    assert qid.startswith("Q"), qid
-    item = state.items[qid]
+    qid = item["id"]
 
-    for predicate, object in _predicate_objects(state.graph, item_subject):
+    if edit_summary_literal := _literal(graph, item_subject, WIKIDATABOTS.editSummary):
+        edit_summaries.add(edit_summary_literal.toPython())
+
+    for predicate, object in _predicate_objects(graph, item_subject):
         predicate_prefix, predicate_local_name = _compute_qname(predicate)
 
         if predicate_prefix == "wdt":
+            assert isinstance(object, URIRef) or isinstance(object, Literal)
             pid = _pid(predicate_local_name)
-            snak = _resolve_snak(state, pid, object)
+            snak = _resolve_snak(graph, property_datatypes, pid, object)
             claims = _item_property_claims(item, pid)
             if not _statements_contains_snak(claims, snak):
-                claims.append(_new_statement(qid, snak))
+                statement: wikidata_typing.Statement = {
+                    "id": _new_statement_id(qid),
+                    "type": "statement",
+                    "rank": "normal",
+                    "mainsnak": snak,
+                }
+                claims.append(statement)
 
-        elif predicate_prefix == "p" and isinstance(object, BNode):
+        elif predicate_prefix == "p":
+            assert isinstance(object, BNode)
             pid = _pid(predicate_local_name)
-            novalue_snak: wikidata_typing.SnakNoValue = {
-                "snaktype": "novalue",
-                "property": predicate_local_name,
-            }
-            statement = _new_statement(qid, novalue_snak)
-            # TODO: Extract function to build new statement and append it here
-            _item_property_claims(item, pid).append(statement)
-            _update_statement(
-                state=state,
+            statement, edit_summary = _new_statement(
+                graph=graph,
+                property_datatypes=property_datatypes,
                 qid=qid,
-                statement_subject=object,
-                statement=statement,
+                pid=pid,
+                subject=object,
             )
-            assert statement["mainsnak"] != novalue_snak
-
-        elif predicate == WIKIDATABOTS.editSummary:
-            if qid not in state.edit_summaries:
-                state.edit_summaries[qid] = set()
-            state.edit_summaries[qid].add(object.toPython())
-
-        else:
-            logger.error(
-                "NotImplemented: Unknown wd triple: %s %s %s",
-                item_subject,
-                predicate,
-                object,
-            )
+            _item_property_claims(item, pid).append(statement)
+            if edit_summary:
+                edit_summaries.add(edit_summary)
 
 
 def process_graph(
     input: TextIO,
     blocked_qids: set[str] = set(),
     user_agent: str = mediawiki_api.DEFAULT_USER_AGENT,
-) -> Iterator[tuple[wikidata_typing.Item, list[wikidata_typing.Statement], str | None]]:
+) -> Iterator[tuple[str, int, list[wikidata_typing.Statement], str | None]]:
     graph = Graph()
     data = PREFIXES + input.read()
     graph.parse(data=data)
 
-    items = _prefetch_items(graph=graph, user_agent=user_agent)
+    property_datatypes = _prefetch_property_datatypes(graph, user_agent)
+    items = _prefetch_items(graph, user_agent)
+    original_items = deepcopy(items)
 
-    state = ProcessState(
-        graph=graph,
-        edit_summaries={},
-        property_datatypes=_prefetch_property_datatypes(
-            graph=graph, user_agent=user_agent
-        ),
-        original_items=deepcopy(items),
-        items=items,
-    )
+    edit_summaries: dict[str, set[str]] = defaultdict(lambda: set())
 
     for subject in _subjects(graph):
         if isinstance(subject, BNode):
@@ -819,24 +959,32 @@ def process_graph(
 
         if prefix == "wd":
             assert isinstance(subject, URIRef)
-            _update_item(state, _qid(local_name), subject)
+            qid = _qid(local_name)
+            _update_item(
+                graph=graph,
+                property_datatypes=property_datatypes,
+                item=items[qid],
+                item_subject=subject,
+                edit_summaries=edit_summaries[qid],
+            )
 
         elif prefix == "wds":
             assert isinstance(subject, URIRef)
-            qid, claim = _find_claim_guid(state, local_name)
+            qid, claim = _find_claim_guid(items, local_name)
             _update_statement(
-                state=state,
+                graph=graph,
+                property_datatypes=property_datatypes,
                 qid=qid,
                 statement_subject=subject,
                 statement=claim,
+                edit_summaries=edit_summaries[qid],
             )
 
-        else:
-            logger.error("NotImplemented: Unknown subject: %s", subject)
-
     changed_statements: dict[str, list[wikidata_typing.Statement]] = {}
-    for item, statement in _detect_changed_claims(state):
-        qid = item["id"]
+    for qid, statement in _detect_changed_claims(
+        original_items=original_items,
+        updated_items=items,
+    ):
         if qid not in changed_statements:
             changed_statements[qid] = []
         changed_statements[qid].append(statement)
@@ -846,10 +994,12 @@ def process_graph(
             logger.warning("Skipping edit, %s is blocked", qid)
             continue
         summary: str | None = None
-        if summaries := state.edit_summaries.get(qid):
+        if summaries := edit_summaries[qid]:
             summary = ", ".join(sorted(summaries))
-        item = state.items[qid]
-        yield item, statements, summary
+        assert summary != ""
+        assert len(statements) > 0
+        lastrevid = items[qid]["lastrevid"]
+        yield qid, lastrevid, statements, summary
 
 
 def fetch_page_qids(title: str) -> set[str]:
