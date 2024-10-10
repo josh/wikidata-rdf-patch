@@ -514,7 +514,7 @@ def _references_contains(
 @dataclass
 class ProcessState:
     graph: Graph
-    edit_summaries: dict[str, str]
+    edit_summaries: dict[str, set[str]]
     property_datatypes: dict[str, wikidata_typing.DataType]
     original_items: dict[str, wikidata_typing.Item]
     items: dict[str, wikidata_typing.Item]
@@ -732,7 +732,9 @@ def _update_statement(
                 references.append(reference)
 
         elif predicate == WIKIDATABOTS.editSummary:
-            state.edit_summaries[qid] = object.toPython()
+            if qid not in state.edit_summaries:
+                state.edit_summaries[qid] = set()
+            state.edit_summaries[qid].add(object.toPython())
 
         else:
             logger.error("NotImplemented: Unknown wds triple: %s %s", predicate, object)
@@ -774,8 +776,9 @@ def _update_item(
             assert statement["mainsnak"] != novalue_snak
 
         elif predicate == WIKIDATABOTS.editSummary:
-            # TODO: Append to edit summary set
-            state.edit_summaries[qid] = object.toPython()
+            if qid not in state.edit_summaries:
+                state.edit_summaries[qid] = set()
+            state.edit_summaries[qid].add(object.toPython())
 
         else:
             logger.error(
@@ -842,7 +845,9 @@ def process_graph(
         if qid in blocked_qids:
             logger.warning("Skipping edit, %s is blocked", qid)
             continue
-        summary: str | None = state.edit_summaries.get(qid)
+        summary: str | None = None
+        if summaries := state.edit_summaries.get(qid):
+            summary = ", ".join(sorted(summaries))
         item = state.items[qid]
         yield item, statements, summary
 
