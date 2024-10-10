@@ -6,6 +6,276 @@ from wikidata_rdf_patch.rdf_patch import process_graph
 actions_logging.setup()
 
 
+def test_wdt_add_monolingualtext() -> None:
+    triples = """
+        wd:Q115569934 wdt:P1450 "hello"@en.
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 1
+    (item, claims, _) = edits[0]
+    assert item["id"] == "Q115569934"
+    assert len(claims) == 1
+    claim = claims[0]
+    assert claim["id"].startswith("Q115569934$")
+    assert claim["id"] != "Q115569934$47a71564-44cc-83f4-f53e-352c21c0f983"
+    assert claim["mainsnak"]["snaktype"] == "value"
+    assert claim["mainsnak"]["property"] == "P1450"
+    assert claim["mainsnak"]["datatype"] == "monolingualtext"
+    assert claim["mainsnak"]["datavalue"]["type"] == "monolingualtext"
+    assert claim["mainsnak"]["datavalue"]["value"]["text"] == "hello"
+    assert claim["mainsnak"]["datavalue"]["value"]["language"] == "en"
+
+
+def test_wdt_noop_monolingualtext() -> None:
+    triples = """
+        wd:Q115569934 wdt:P1450 "hiekkalaatikko"@fi.
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 0
+
+
+def test_wdt_add_commonsmediafile() -> None:
+    triples = """
+        wd:Q115569934 wdt:P368 <http://commons.wikimedia.org/wiki/Special:FilePath/NEW%20Sandbox%20with%20toys%20on%20R%C3%B6e%20g%C3%A5rd%201.jpg>.
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 1
+    (item, claims, _) = edits[0]
+    assert item["id"] == "Q115569934"
+    assert len(claims) == 1
+    claim = claims[0]
+    assert claim["id"].startswith("Q115569934$")
+    assert claim["id"] != "Q115569934$48c6e56b-40a2-90a8-85c1-68f39927381c"
+    assert claim["mainsnak"]["snaktype"] == "value"
+    assert claim["mainsnak"]["property"] == "P368"
+    assert claim["mainsnak"]["datatype"] == "commonsMedia"
+    assert claim["mainsnak"]["datavalue"]["type"] == "string"
+    assert (
+        claim["mainsnak"]["datavalue"]["value"]
+        == "NEW Sandbox with toys on R\u00f6e g\u00e5rd 1.jpg"
+    )
+
+
+def test_wdt_noop_commonsmediafile() -> None:
+    triples = """
+        wd:Q115569934 wdt:P368 <http://commons.wikimedia.org/wiki/Special:FilePath/Sandbox%20with%20toys%20on%20R%C3%B6e%20g%C3%A5rd%201.jpg>.
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 0
+
+
+def test_wdt_add_geocoordinate() -> None:
+    triples = """
+        wd:Q115569934 wdt:P626 "Point(-3.0 40.0)"^^geo:wktLiteral.
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 1
+    (item, claims, _) = edits[0]
+    assert item["id"] == "Q115569934"
+    assert len(claims) == 1
+    claim = claims[0]
+    assert claim["id"].startswith("Q115569934$")
+    assert claim["id"] != "Q115569934$fc0fd4ba-4ca1-b24c-dda7-de9d6fcab16a"
+    assert claim["mainsnak"]["snaktype"] == "value"
+    assert claim["mainsnak"]["property"] == "P626"
+    assert claim["mainsnak"]["datatype"] == "globe-coordinate"
+    assert claim["mainsnak"]["datavalue"]["type"] == "globecoordinate"
+    assert claim["mainsnak"]["datavalue"]["value"]["latitude"] == 40.0
+    assert claim["mainsnak"]["datavalue"]["value"]["longitude"] == -3.0
+    assert claim["mainsnak"]["datavalue"]["value"]["altitude"] is None
+    assert claim["mainsnak"]["datavalue"]["value"]["precision"] == 0.0001
+    assert (
+        claim["mainsnak"]["datavalue"]["value"]["globe"]
+        == "http://www.wikidata.org/entity/Q2"
+    )
+
+
+def test_wdt_noop_geocoordinate() -> None:
+    triples = """
+        wd:Q115569934 wdt:P626 "Point(-3.6736 40.3929)"^^geo:wktLiteral.
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 0
+
+
+def test_wdt_add_item() -> None:
+    triples = """
+        wd:Q115569934 wdt:P369 wd:Q13406268.
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 1
+    (item, claims, _) = edits[0]
+    assert item["id"] == "Q115569934"
+    assert len(claims) == 1
+    claim = claims[0]
+    assert claim["id"].startswith("Q115569934$")
+    assert claim["id"] != "Q115569934$eebff2d7-4a6b-457c-1327-b8a2786e99e7"
+    assert claim["mainsnak"]["snaktype"] == "value"
+    assert claim["mainsnak"]["property"] == "P369"
+    assert claim["mainsnak"]["datatype"] == "wikibase-item"
+    assert claim["mainsnak"]["datavalue"]["type"] == "wikibase-entityid"
+    assert claim["mainsnak"]["datavalue"]["value"]["entity-type"] == "item"
+    assert claim["mainsnak"]["datavalue"]["value"]["numeric-id"] == 13406268
+    assert claim["mainsnak"]["datavalue"]["value"]["id"] == "Q13406268"
+
+
+def test_wdt_noop_item() -> None:
+    triples = """
+        wd:Q115569934 wdt:P369 wd:Q4115189.
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 0
+
+
+def test_wdt_add_quantity() -> None:
+    triples = """
+        wd:Q115569934 wdt:P1106 "+456"^^xsd:decimal.
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 1
+    (item, claims, _) = edits[0]
+    assert item["id"] == "Q115569934"
+    assert len(claims) == 1
+    claim = claims[0]
+    assert claim["id"].startswith("Q115569934$")
+    assert claim["id"] != "Q115569934$b40fcbdc-45c7-5aff-afd9-edafac78dfd4"
+    assert claim["mainsnak"]["snaktype"] == "value"
+    assert claim["mainsnak"]["property"] == "P1106"
+    assert claim["mainsnak"]["datatype"] == "quantity"
+    assert claim["mainsnak"]["datavalue"]["type"] == "quantity"
+    assert claim["mainsnak"]["datavalue"]["value"]["amount"] == "+456"
+    assert claim["mainsnak"]["datavalue"]["value"]["unit"] == "1"
+    assert claim["mainsnak"]["datavalue"]["value"].get("lowerBound") is None
+    assert claim["mainsnak"]["datavalue"]["value"].get("upperBound") is None
+
+
+def test_wdt_noop_quantity() -> None:
+    triples = """
+        wd:Q115569934 wdt:P1106 "+123"^^xsd:decimal.
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 0
+
+
+def test_wdt_add_string() -> None:
+    triples = """
+        wd:Q115569934 wdt:P370 "Goodbye world!".
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 1
+    (item, claims, _) = edits[0]
+    assert item["id"] == "Q115569934"
+    assert len(claims) == 1
+    claim = claims[0]
+    assert claim["id"].startswith("Q115569934$")
+    assert claim["id"] != "Q115569934$4874d203-4feb-def9-b19d-748313b1f9fc"
+    assert claim["mainsnak"]["snaktype"] == "value"
+    assert claim["mainsnak"]["property"] == "P370"
+    assert claim["mainsnak"]["datatype"] == "string"
+    assert claim["mainsnak"]["datavalue"]["type"] == "string"
+    assert claim["mainsnak"]["datavalue"]["value"] == "Goodbye world!"
+
+
+def test_wdt_noop_string() -> None:
+    triples = """
+        wd:Q115569934 wdt:P370 "Hello world!".
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 0
+
+
+def test_wdt_add_time() -> None:
+    triples = """
+        wd:Q115569934 wdt:P578 "2012-10-30T00:00:00Z"^^xsd:dateTime.
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 1
+    (item, claims, _) = edits[0]
+    assert item["id"] == "Q115569934"
+    assert len(claims) == 1
+    claim = claims[0]
+    assert claim["id"].startswith("Q115569934$")
+    assert claim["id"] != "Q115569934$b2ad899e-42f0-9928-e69e-853715f8d6e6"
+    assert claim["mainsnak"]["snaktype"] == "value"
+    assert claim["mainsnak"]["property"] == "P578"
+    assert claim["mainsnak"]["datatype"] == "time"
+    assert claim["mainsnak"]["datavalue"]["type"] == "time"
+    assert claim["mainsnak"]["datavalue"]["value"]["time"] == "+2012-10-30T00:00:00Z"
+    assert claim["mainsnak"]["datavalue"]["value"]["timezone"] == 0
+    assert claim["mainsnak"]["datavalue"]["value"]["before"] == 0
+    assert claim["mainsnak"]["datavalue"]["value"]["after"] == 0
+    assert claim["mainsnak"]["datavalue"]["value"]["precision"] == 11
+    assert (
+        claim["mainsnak"]["datavalue"]["value"]["calendarmodel"]
+        == "http://www.wikidata.org/entity/Q1985727"
+    )
+
+
+def test_wdt_noop_time() -> None:
+    triples = """
+        wd:Q115569934 wdt:P578 "2012-10-29T00:00:00Z"^^xsd:dateTime.
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 0
+
+
+def test_wdt_add_url() -> None:
+    triples = """
+        wd:Q115569934 wdt:P855 <http://example.org/>.
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 1
+    (item, claims, _) = edits[0]
+    assert item["id"] == "Q115569934"
+    assert len(claims) == 1
+    claim = claims[0]
+    assert claim["id"].startswith("Q115569934$")
+    assert claim["id"] != "Q115569934$01b174fc-49a8-650c-891f-aa77224c1794"
+    assert claim["mainsnak"]["snaktype"] == "value"
+    assert claim["mainsnak"]["property"] == "P855"
+    assert claim["mainsnak"]["datatype"] == "url"
+    assert claim["mainsnak"]["datavalue"]["type"] == "string"
+    assert claim["mainsnak"]["datavalue"]["value"] == "http://example.org/"
+
+
+def test_wdt_noop_url() -> None:
+    triples = """
+        wd:Q115569934 wdt:P855 <http://example.com/>.
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 0
+
+
+def test_wdt_add_externalid() -> None:
+    triples = """
+        wd:Q115569934 wdt:P2536 "67890".
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 1
+    (item, claims, _) = edits[0]
+    assert item["id"] == "Q115569934"
+    assert len(claims) == 1
+    claim = claims[0]
+    assert claim["id"].startswith("Q115569934$")
+    assert claim["id"] != "Q115569934$82f9bf82-4463-35e5-7956-0a3a80b1e58b"
+    assert claim["mainsnak"]["snaktype"] == "value"
+    assert claim["mainsnak"]["property"] == "P2536"
+    assert claim["mainsnak"]["datatype"] == "external-id"
+    assert claim["mainsnak"]["datavalue"]["type"] == "string"
+    assert claim["mainsnak"]["datavalue"]["value"] == "67890"
+
+
+def test_wdt_noop_externalid() -> None:
+    triples = """
+        wd:Q115569934 wdt:P2536 "12345".
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 0
+
+
+### Old tests
+
+
 def test_change_statement_rank() -> None:
     triple = [
         "wds:Q172241-6B571F20-7732-47E1-86B2-1DFA6D0A15F5",

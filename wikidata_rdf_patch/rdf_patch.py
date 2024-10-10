@@ -37,6 +37,8 @@ WDV = Namespace("http://www.wikidata.org/value/")
 WDNO = Namespace("http://www.wikidata.org/prop/novalue/")
 RDF = Namespace("http://www.w3.org/1999/02/22-rdf-syntax-ns#")
 WIKIBASE = Namespace("http://wikiba.se/ontology#")
+GEO = Namespace("http://www.opengis.net/ont/geosparql#")
+COMMONS_MEDIA = Namespace("http://commons.wikimedia.org/wiki/Special:FilePath/")
 
 WIKIDATABOTS = Namespace("https://github.com/josh/wikidatabots#")
 
@@ -57,6 +59,8 @@ NS_MANAGER.bind("pqv", PQV)
 NS_MANAGER.bind("pqve", PQVE)
 NS_MANAGER.bind("pr", PR)
 NS_MANAGER.bind("prv", PRV)
+NS_MANAGER.bind("geo", GEO)
+NS_MANAGER.bind("commonsMedia", COMMONS_MEDIA)
 NS_MANAGER.bind("wikidatabots", WIKIDATABOTS)
 
 PREFIXES = """
@@ -97,6 +101,7 @@ PREFIX wdv: <http://www.wikidata.org/value/>
 PREFIX wikibase: <http://wikiba.se/ontology#>
 
 PREFIX wikidatabots: <https://github.com/josh/wikidatabots#>
+PREFIX commonsMedia: <http://commons.wikimedia.org/wiki/Special:FilePath/>
 
 """
 
@@ -152,14 +157,19 @@ def _graph_empty_node(graph: Graph, object: AnyRDFObject) -> bool:
 
 
 def _compute_qname(uri: URIRef) -> tuple[str, str]:
-    prefix, _, name = NS_MANAGER.compute_qname(uri)
-    return (prefix, name)
+    try:
+        prefix, _, name = NS_MANAGER.compute_qname(uri)
+        return (prefix, name)
+    except ValueError:
+        return ("", str(uri))
 
 
-def _resolve_object_uriref(object: URIRef) -> wikidata_typing.WikibaseEntityIdDataValue:
+def _resolve_object_uriref(
+    object: URIRef,
+) -> wikidata_typing.WikibaseEntityIdDataValue | wikidata_typing.StringDataValue:
     prefix, local_name = _compute_qname(object)
-    assert prefix == "wd"
-    if local_name.startswith("Q"):
+
+    if prefix == "wd" and local_name.startswith("Q"):
         return {
             "type": "wikibase-entityid",
             "value": {
@@ -168,7 +178,7 @@ def _resolve_object_uriref(object: URIRef) -> wikidata_typing.WikibaseEntityIdDa
                 "id": local_name,
             },
         }
-    elif local_name.startswith("P"):
+    elif prefix == "wd" and local_name.startswith("P"):
         return {
             "type": "wikibase-entityid",
             "value": {
@@ -177,8 +187,18 @@ def _resolve_object_uriref(object: URIRef) -> wikidata_typing.WikibaseEntityIdDa
                 "id": local_name,
             },
         }
+    elif prefix == "commonsMedia":
+        return {
+            "type": "string",
+            "value": urllib.parse.unquote(local_name),
+        }
+    elif prefix == "":
+        return {
+            "type": "string",
+            "value": local_name,
+        }
     else:
-        raise NotImplementedError(f"Unknown item: {object}")
+        raise NotImplementedError(f"Unknown URI: {prefix}:{local_name} <{object}>")
 
 
 def _resolve_object_bnode_time_value(
@@ -269,7 +289,9 @@ def _resolve_object_bnode(
 def _resolve_object_literal(
     object: Literal,
 ) -> (
-    wikidata_typing.MonolingualTextDataValue
+    wikidata_typing.GlobecoordinateDataValue
+    | wikidata_typing.MonolingualTextDataValue
+    | wikidata_typing.QuantityDataValue
     | wikidata_typing.StringDataValue
     | wikidata_typing.TimeDataValue
 ):
@@ -279,6 +301,15 @@ def _resolve_object_literal(
             "value": {
                 "language": object.language,
                 "text": object.toPython(),
+            },
+        }
+
+    elif object.datatype == XSD.decimal:
+        return {
+            "type": "quantity",
+            "value": {
+                "amount": f"+{object.toPython()}",
+                "unit": "1",
             },
         }
     elif object.language is None and object.datatype is None:
@@ -296,6 +327,19 @@ def _resolve_object_literal(
                 "before": 0,
                 "timezone": 0,
                 "calendarmodel": "http://www.wikidata.org/entity/Q1985727",
+            },
+        }
+    elif object.datatype == GEO.wktLiteral:
+        match = re.match(r"Point\(([-0-9.]+) ([-0-9.]+)\)", object.toPython())
+        assert match, f"invalid wktLiteral: {object.toPython()}"
+        return {
+            "type": "globecoordinate",
+            "value": {
+                "latitude": float(match.group(2)),
+                "longitude": float(match.group(1)),
+                "altitude": None,
+                "precision": 0.0001,
+                "globe": "http://www.wikidata.org/entity/Q2",
             },
         }
     else:
@@ -391,6 +435,11 @@ def _datavalue_equals(
             return a["value"]["id"] == b["value"]["id"]
         else:
             return False
+    elif a["type"] == "quantity" and b["type"] == "quantity":
+        if "upperBound" in a["value"] and "upperBound" not in b["value"]:
+            return a["value"]["amount"] == b["value"]["amount"]
+        else:
+            return a == b
     else:
         return a == b
 
