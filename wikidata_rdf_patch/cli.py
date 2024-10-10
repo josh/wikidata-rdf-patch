@@ -99,17 +99,17 @@ def main(
         for item, claims, summary in pbar:
             pbar.set_description(item["id"])
             if summary:
-                pbar.write(f"Edit {item['id']}: {summary}")
+                logger.info(f"Edit {item['id']}: {summary}")
             else:
-                pbar.write(f"Edit {item['id']}")
+                logger.info(f"Edit {item['id']}")
             for statement in claims:
                 statement_id = statement["mainsnak"]["property"]
                 statement_snak = statement.get("id", "(new claim)")
-                pbar.write(f" ⮑ {statement_id} / {statement_snak}")
+                logger.info(f" ⮑ {statement_id} / {statement_snak}")
 
             wait_time = max(0, min_time_between_edits - (time.time() - last_edit))
             if wait_time > 0:
-                pbar.write(f"Waiting for {wait_time:.1f} seconds")
+                logger.debug("Waiting for %.1f seconds", wait_time)
                 time.sleep(wait_time)
 
             mediawiki_api.wbeditentity(
