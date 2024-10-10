@@ -369,6 +369,22 @@ def test_statement_ps_noop() -> None:
     assert len(edits) == 0
 
 
+# def test_statement_novalue_change() -> None:
+#     triples = """
+#       wds:Q115569934-4874d203-4feb-def9-b19d-748313b1f9fc rdf:type wdno:P370.
+#     """
+#     edits = list(process_graph(StringIO(triples)))
+#     assert len(edits) == 1
+
+
+# def test_statement_somevalue_change() -> None:
+#     triples = """
+#       wds:Q115569934-4874d203-4feb-def9-b19d-748313b1f9fc ps:P1114 <http://www.wikidata.org/.well-known/genid/18b85823a28c78df421964c2e19009e1>.
+#     """
+#     edits = list(process_graph(StringIO(triples)))
+#     assert len(edits) == 1
+
+
 def test_statement_psv_change() -> None:
     triples = """
       wds:Q115569934-b40fcbdc-45c7-5aff-afd9-edafac78dfd4 psv:P1106 [
@@ -573,9 +589,6 @@ def test_statement_pqe_remove() -> None:
     assert claim["id"] == "q42$b88670f8-456b-3ecb-cf3d-2bca2cf7371e"
     assert "P580" not in claim["qualifiers"]
     assert "P580" not in claim["qualifiers-order"]
-
-
-### Old tests
 
 
 def test_statement_prov_wasderivedfrom_add() -> None:
