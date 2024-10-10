@@ -97,7 +97,6 @@ def main(
 
     with logging_redirect_tqdm():
         for item, claims, summary in pbar:
-            pbar.set_description(item["id"])
             if summary:
                 logger.info(f"Edit {item['id']}: {summary}")
             else:
