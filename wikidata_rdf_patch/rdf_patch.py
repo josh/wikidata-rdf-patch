@@ -3,13 +3,14 @@ import itertools
 import json
 import logging
 import re
+import urllib.parse
 import urllib.request
-from collections import OrderedDict, defaultdict
-from collections.abc import Iterator
+import uuid
+from collections.abc import Iterable, Iterator
+from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, TextIO, cast
+from typing import TextIO
 
-import pywikibot  # type: ignore
 from rdflib import XSD, Graph
 from rdflib.namespace import Namespace, NamespaceManager
 from rdflib.term import BNode, Literal, URIRef
@@ -17,8 +18,6 @@ from rdflib.term import BNode, Literal, URIRef
 from . import mediawiki_api, wikidata_typing
 
 logger = logging.getLogger("rdf_patch")
-
-SITE = pywikibot.Site("wikidata", "wikidata")
 
 P = Namespace("http://www.wikidata.org/prop/")
 PQ = Namespace("http://www.wikidata.org/prop/qualifier/")
@@ -312,6 +311,74 @@ def _resolve_object(graph: Graph, object: AnyRDFObject) -> wikidata_typing.DataV
         return _resolve_object_literal(object)
 
 
+def _qid(qid: str) -> str:
+    assert qid.startswith("Q"), qid
+    return qid
+
+
+def _pid(pid: str) -> str:
+    assert pid.startswith("P"), pid
+    return pid
+
+
+def _item_property_claims(
+    item: wikidata_typing.Item, pid: str
+) -> list[wikidata_typing.Statement]:
+    assert pid.startswith("P"), pid
+    if "claims" not in item:
+        item["claims"] = {}
+    if pid not in item["claims"]:
+        item["claims"][pid] = []
+    return item["claims"][pid]
+
+
+def _statement_property_qualifiers(
+    statement: wikidata_typing.Statement, pid: str
+) -> list[wikidata_typing.Snak]:
+    assert pid.startswith("P"), pid
+    if "qualifiers" not in statement:
+        statement["qualifiers"] = {}
+    if "qualifiers-order" not in statement:
+        statement["qualifiers-order"] = []
+    if pid not in statement["qualifiers"]:
+        statement["qualifiers"][pid] = []
+    if pid not in statement["qualifiers-order"]:
+        statement["qualifiers-order"].append(pid)
+    return statement["qualifiers"][pid]
+
+
+def _delete_statement_property_qualifiers(
+    statement: wikidata_typing.Statement, pid: str
+) -> None:
+    assert pid.startswith("P"), pid
+    if "qualifiers" in statement and pid in statement["qualifiers"]:
+        del statement["qualifiers"][pid]
+    if "qualifiers-order" in statement:
+        statement["qualifiers-order"].remove(pid)
+
+
+def _statement_references(
+    statement: wikidata_typing.Statement,
+) -> list[wikidata_typing.Reference]:
+    if "references" not in statement:
+        statement["references"] = []
+    return statement["references"]
+
+
+def _new_statement(
+    qid: str,
+    snak: wikidata_typing.Snak,
+    rank: wikidata_typing.Rank = "normal",
+) -> wikidata_typing.Statement:
+    assert qid.startswith("Q"), qid
+    return {
+        "id": f"{qid}${uuid.uuid4()}",
+        "type": "statement",
+        "rank": rank,
+        "mainsnak": snak,
+    }
+
+
 def _datavalue_equals(
     a: wikidata_typing.DataValue, b: wikidata_typing.DataValue
 ) -> bool:
@@ -329,89 +396,88 @@ def _datavalue_equals(
 
 
 def _snak_equals(a: wikidata_typing.Snak, b: wikidata_typing.Snak) -> bool:
-    if a["snaktype"] == "value" and b["snaktype"] == "value":
+    if a["snaktype"] != b["snaktype"]:
+        return False
+    elif a["property"] != b["property"]:
+        return False
+    elif a["snaktype"] == "value" and b["snaktype"] == "value":
         return _datavalue_equals(a["datavalue"], b["datavalue"])
     else:
-        return a == b
+        return True
 
 
-def _pywikibot_claim_from_json(snak: wikidata_typing.Snak) -> pywikibot.Claim:
-    statement = {"type": "statement", "mainsnak": snak}
-    claim = pywikibot.Claim.fromJSON(site=SITE, data=statement)
-    assert claim.isQualifier is False
-    assert claim.isReference is False
-    return claim
+def _any_snak_equals(
+    snaks: Iterable[wikidata_typing.Snak], snak: wikidata_typing.Snak
+) -> bool:
+    return any(_snak_equals(s, snak) for s in snaks)
 
 
-def _pywikibot_claim_to_json(claim: pywikibot.Claim) -> wikidata_typing.Statement:
-    assert claim.isQualifier is False
-    assert claim.isReference is False
-    if claim.target is None:
-        return {
-            "id": "",
-            "type": "statement",
-            "rank": "normal",
-            "mainsnak": {
-                "snaktype": "novalue",
-                "property": claim.getID(),
-            },
-        }
-    return cast(wikidata_typing.Statement, claim.toJSON())
+def _only_snak_equals(
+    snaks: Iterable[wikidata_typing.Snak], snak: wikidata_typing.Snak
+) -> bool:
+    snaks_lst = list(snaks)
+    return len(snaks_lst) == 1 and _snak_equals(snaks_lst[0], snak)
 
 
-def _pywikibot_qualifier_from_json(snak: wikidata_typing.Snak) -> pywikibot.Claim:
-    qualifier = pywikibot.Claim.fromJSON(site=SITE, data={"mainsnak": snak})
-    qualifier.isQualifier = True
-    assert qualifier.isQualifier is True
-    assert qualifier.isReference is False
-    return qualifier
+def _statements_contains_snak(
+    statements: Iterable[wikidata_typing.Statement], snak: wikidata_typing.Snak
+) -> bool:
+    return any(_snak_equals(statement["mainsnak"], snak) for statement in statements)
 
 
-def _pywikibot_qualifier_to_json(qualifier: pywikibot.Claim) -> wikidata_typing.Snak:
-    assert qualifier.isQualifier is True
-    assert qualifier.isReference is False
-    return cast(wikidata_typing.Snak, qualifier.toJSON())
+def _snaks_equals(
+    a: Iterable[wikidata_typing.Snak], b: Iterable[wikidata_typing.Snak]
+) -> bool:
+    a_lst = list(a)
+    b_lst = list(b)
+    return len(a_lst) == len(b_lst) and all(
+        _snak_equals(a_lst[i], b_lst[i]) for i in range(len(a_lst))
+    )
 
 
-def _pywikibot_claim_source_from_json(
-    reference: wikidata_typing.Reference,
-) -> OrderedDict[str, list[pywikibot.Claim]]:
-    source: OrderedDict[str, list[pywikibot.Claim]] = OrderedDict()
-    for pid in reference["snaks-order"]:
-        for snak in reference["snaks"][pid]:
-            claim = pywikibot.Claim.fromJSON(site=SITE, data={"mainsnak": snak})
-            claim.isReference = True
-            if pid not in source:
-                source[pid] = []
-            source[pid].append(claim)
-    return source
+def _reference_equals(
+    a: wikidata_typing.Reference, b: wikidata_typing.Reference
+) -> bool:
+    if a["snaks-order"] != b["snaks-order"]:
+        return False
+    for pid in a["snaks-order"]:
+        if not _snaks_equals(a["snaks"][pid], b["snaks"][pid]):
+            return False
+    return True
+
+
+def _references_contains(
+    a: Iterable[wikidata_typing.Reference], b: wikidata_typing.Reference
+) -> bool:
+    return any(_reference_equals(r, b) for r in a)
 
 
 @dataclass
 class ProcessState:
     graph: Graph
     edit_summaries: dict[str, str]
-    user_agent: str
     property_datatypes: dict[str, wikidata_typing.DataType]
+    original_items: dict[str, wikidata_typing.Item]
     items: dict[str, wikidata_typing.Item]
-    # TODO: Deprecate pywikibot.ItemPage
-    item_pages: dict[str, pywikibot.ItemPage]
 
 
-def _property_snakvalue(
+def _resolve_snak(
     state: ProcessState,
     pid: str,
-    value: wikidata_typing.DataValue,
-) -> wikidata_typing.SnakValue:
+    object: AnyRDFObject,
+) -> wikidata_typing.Snak:
     assert pid.startswith("P"), pid
     datatype = state.property_datatypes[pid]
+    value = _resolve_object(state.graph, object)
     assert value["type"] == wikidata_typing.ALLOWED_DATA_TYPE_VALUE_TYPES[datatype]
-    return {
+    # TODO: Support SnakSomeValue and SnakNoValue
+    snak: wikidata_typing.SnakValue = {
         "snaktype": "value",
         "property": pid,
         "datatype": datatype,
         "datavalue": value,
     }
+    return snak
 
 
 def _resolve_object_bnode_reference(
@@ -422,8 +488,8 @@ def _resolve_object_bnode_reference(
         "snaks-order": [],
     }
 
-    def add_reference(pid: str, value: wikidata_typing.DataValue) -> None:
-        snak = _property_snakvalue(state=state, pid=pid, value=value)
+    def add_reference(pid: str, object: AnyRDFObject) -> None:
+        snak = _resolve_snak(state, pid, object)
 
         if pid not in reference["snaks"] and pid not in reference["snaks-order"]:
             reference["snaks"][pid] = []
@@ -436,114 +502,15 @@ def _resolve_object_bnode_reference(
         reference["snaks"][pid].append(snak)
 
     for pr_name, pr_object in _predicate_ns_objects(state.graph, object, PR):
-        target = _resolve_object(state.graph, pr_object)
-        add_reference(pid=pr_name, value=target)
+        add_reference(pr_name, pr_object)
 
     for prv_name, prv_object in _predicate_ns_objects(state.graph, object, PRV):
-        target = _resolve_object(state.graph, prv_object)
-        add_reference(pid=prv_name, value=target)
+        add_reference(prv_name, prv_object)
+
+    assert len(reference["snaks"]) > 0
+    assert len(reference["snaks-order"]) > 0
 
     return reference
-
-
-def _claim_uri(claim: pywikibot.Claim) -> str:
-    snak: str = claim.snak
-    guid = snak.replace("$", "-")
-    return f"http://www.wikidata.org/entity/statement/{guid}"
-
-
-def _item_append_claim_target(
-    state: ProcessState,
-    qid: str,
-    pid: str,
-    target: wikidata_typing.DataValue,
-) -> tuple[bool, pywikibot.Claim]:
-    assert pid.startswith("P"), pid
-
-    # TODO: Avoid mutating pywikibot.ItemPage
-    item: pywikibot.ItemPage = state.item_pages[qid]
-    if pid not in item.claims:
-        item.claims[pid] = []
-    claims = item.claims[pid]
-
-    for claim in claims:
-        claim_json = _pywikibot_claim_to_json(claim)
-        if (
-            claim_json["mainsnak"]["snaktype"] == "value"
-            and claim_json["mainsnak"]["datavalue"] == target
-        ):
-            return (False, claim)
-
-    snak = _property_snakvalue(state=state, pid=pid, value=target)
-    new_claim = _pywikibot_claim_from_json(snak)
-    item.claims[pid].append(new_claim)
-
-    return (True, new_claim)
-
-
-def _claim_set_target(
-    state: ProcessState,
-    claim: pywikibot.Claim,
-    target: wikidata_typing.DataValue,
-) -> bool:
-    claim_json = _pywikibot_claim_to_json(claim)
-    snak = _property_snakvalue(state=state, pid=claim.getID(), value=target)
-
-    if _snak_equals(claim_json["mainsnak"], snak):
-        return False
-
-    new_claim = _pywikibot_claim_from_json(snak)
-    claim.setTarget(new_claim.target)
-
-    return True
-
-
-def _claim_append_qualifer(
-    state: ProcessState,
-    claim: pywikibot.Claim,
-    pid: str,
-    target: wikidata_typing.DataValue,
-) -> bool:
-    assert pid.startswith("P"), pid
-
-    if pid not in claim.qualifiers:
-        claim.qualifiers[pid] = []
-    qualifiers = claim.qualifiers[pid]
-
-    snak = _property_snakvalue(state=state, pid=pid, value=target)
-
-    for qualifier in qualifiers:
-        qualifier_json = _pywikibot_qualifier_to_json(qualifier)
-        if _snak_equals(qualifier_json, snak):
-            return False
-
-    new_qualifier = _pywikibot_qualifier_from_json(snak)
-    claim.qualifiers[pid].append(new_qualifier)
-
-    return True
-
-
-def _claim_set_qualifer(
-    state: ProcessState,
-    claim: pywikibot.Claim,
-    pid: str,
-    target: wikidata_typing.DataValue,
-) -> bool:
-    assert pid.startswith("P"), pid
-
-    snak = _property_snakvalue(state=state, pid=pid, value=target)
-
-    if pid in claim.qualifiers and len(claim.qualifiers[pid]) == 1:
-        qualifier: pywikibot.Claim = claim.qualifiers[pid][0]
-        qualifier_json = _pywikibot_qualifier_to_json(qualifier)
-        if _snak_equals(qualifier_json, snak):
-            return False
-
-    new_qualifier = pywikibot.Claim.fromJSON(site=SITE, data={"mainsnak": snak})
-    new_qualifier.isQualifier = True
-    claim.qualifiers[pid] = [new_qualifier]
-
-    return True
 
 
 def _prefetch_property_datatypes(
@@ -573,9 +540,7 @@ def _prefetch_property_datatypes(
     return datatypes
 
 
-def _prefetch_item_pages(
-    graph: Graph, user_agent: str
-) -> tuple[dict[str, wikidata_typing.Item], dict[str, pywikibot.ItemPage]]:
+def _prefetch_items(graph: Graph, user_agent: str) -> dict[str, wikidata_typing.Item]:
     qids: set[str] = set()
 
     for uri in _graph_urirefs(graph):
@@ -587,10 +552,9 @@ def _prefetch_item_pages(
 
     if len(qids) == 0:
         logger.debug("No items prefetched")
-        return ({}, {})
+        return {}
 
     items: dict[str, wikidata_typing.Item] = {}
-    item_pages: dict[str, pywikibot.ItemPage] = {}
 
     for qid_batch in itertools.batched(qids, n=50):
         entities = mediawiki_api.wbgetentities(
@@ -600,54 +564,159 @@ def _prefetch_item_pages(
         for qid, entity in entities.items():
             assert entity["type"] == "item"
             items[qid] = entity
-            # TODO: Deprecate pywikibot.ItemPage
-            item_pages[qid] = pywikibot.ItemPage(site=SITE, title=qid)
 
     logger.debug("Prefetched %d items", len(items))
-    return (items, item_pages)
+    return items
 
 
-def _find_claim_guid(state: ProcessState, guid: str) -> tuple[str, pywikibot.Claim]:
+def _find_claim_guid(
+    state: ProcessState, guid: str
+) -> tuple[str, wikidata_typing.Statement]:
     qid, hash = guid.split("-", 1)
-    snak = f"{qid}${hash}"
+    guid = f"{qid}${hash}"
 
-    # TODO: Avoid accessing pywikibot.ItemPage
-    item: pywikibot.ItemPage = state.item_pages[qid.upper()]
+    item = state.items[qid.upper()]
 
-    for property in item.claims:
-        for claim in item.claims[property]:
-            if snak == claim.snak:
-                return (qid.upper(), claim)
+    for statements in item.get("claims", {}).values():
+        for statement in statements:
+            if guid == statement["id"]:
+                return (qid.upper(), statement)
 
     assert False, f"Can't resolve statement GUID: {guid}"
 
 
-class HashableClaim:
-    def __init__(self, claim: pywikibot.Claim) -> None:
-        self.claim = claim
-
-    def __eq__(self, other: Any) -> bool:
-        if not isinstance(other, HashableClaim):
-            return False
-        return cast(bool, self.claim == other.claim)
-
-    def __hash__(self) -> int:
-        return 0
-
-
-_RANKS: dict[str, str] = {
+_RANKS: dict[str, wikidata_typing.Rank] = {
     str(WIKIBASE.NormalRank): "normal",
     str(WIKIBASE.DeprecatedRank): "deprecated",
     str(WIKIBASE.PreferredRank): "preferred",
 }
 
 
-def _claim_set_rank(claim: pywikibot.Claim, rank: URIRef) -> bool:
-    rank_str: str = _RANKS[str(rank)]
-    if claim.rank == rank_str:
-        return False
-    claim.setRank(rank_str)
-    return True
+def _item_statements(item: wikidata_typing.Item) -> Iterator[wikidata_typing.Statement]:
+    for statements in item.get("claims", {}).values():
+        yield from statements
+
+
+def _detect_changed_claims(
+    state: ProcessState,
+) -> Iterator[tuple[wikidata_typing.Item, wikidata_typing.Statement]]:
+    original_claims_by_guid: dict[str, wikidata_typing.Statement] = {}
+    for item in state.original_items.values():
+        for statement in _item_statements(item):
+            guid = statement["id"]
+            assert guid
+            original_claims_by_guid[guid] = statement
+
+    for item in state.items.values():
+        for statement in _item_statements(item):
+            guid = statement.get("id", "")
+            if not guid:
+                yield item, statement
+            elif guid not in original_claims_by_guid:
+                yield item, statement
+            elif statement != original_claims_by_guid[guid]:
+                yield item, statement
+
+
+def _update_statement(
+    state: ProcessState,
+    qid: str,
+    statement_subject: AnyRDFSubject,
+    statement: wikidata_typing.Statement,
+) -> None:
+    assert qid.startswith("Q"), qid
+
+    for predicate, object in _predicate_objects(state.graph, statement_subject):
+        predicate_prefix, predicate_local_name = _compute_qname(predicate)
+
+        if predicate_prefix == "pq" or predicate_prefix == "pqv":
+            pid = _pid(predicate_local_name)
+            snak = _resolve_snak(state, pid, object)
+            qualifiers = _statement_property_qualifiers(statement, pid)
+            if not _any_snak_equals(qualifiers, snak):
+                qualifiers.append(snak)
+
+        elif predicate_prefix == "pqe" or predicate_prefix == "pqve":
+            pid = _pid(predicate_local_name)
+            if _graph_empty_node(state.graph, object):
+                _delete_statement_property_qualifiers(statement, pid)
+            else:
+                snak = _resolve_snak(state, pid, object)
+                qualifiers = _statement_property_qualifiers(statement, pid)
+                if not _only_snak_equals(qualifiers, snak):
+                    qualifiers.clear()
+                    qualifiers.append(snak)
+
+        elif predicate_prefix == "ps" or predicate_prefix == "psv":
+            pid = _pid(predicate_local_name)
+            snak = _resolve_snak(state, pid, object)
+            if not _snak_equals(statement["mainsnak"], snak):
+                statement["mainsnak"] = snak
+
+        elif predicate == WIKIBASE.rank:
+            assert isinstance(object, URIRef)
+            statement["rank"] = _RANKS[str(object)]
+
+        elif predicate == PROV.wasDerivedFrom or predicate == PROV.wasOnlyDerivedFrom:
+            assert isinstance(object, BNode)
+            references = _statement_references(statement)
+            reference = _resolve_object_bnode_reference(state, object)
+            if predicate == PROV.wasOnlyDerivedFrom:
+                references.clear()
+            if not _references_contains(references, reference):
+                references.append(reference)
+
+        elif predicate == WIKIDATABOTS.editSummary:
+            state.edit_summaries[qid] = object.toPython()
+
+        else:
+            logger.error("NotImplemented: Unknown wds triple: %s %s", predicate, object)
+
+
+def _update_item(
+    state: ProcessState,
+    qid: str,
+    item_subject: AnyRDFSubject,
+) -> None:
+    assert qid.startswith("Q"), qid
+    item = state.items[qid]
+
+    for predicate, object in _predicate_objects(state.graph, item_subject):
+        predicate_prefix, predicate_local_name = _compute_qname(predicate)
+
+        if predicate_prefix == "wdt":
+            pid = _pid(predicate_local_name)
+            snak = _resolve_snak(state, pid, object)
+            claims = _item_property_claims(item, pid)
+            if not _statements_contains_snak(claims, snak):
+                claims.append(_new_statement(qid, snak))
+
+        elif predicate_prefix == "p" and isinstance(object, BNode):
+            pid = _pid(predicate_local_name)
+            novalue_snak: wikidata_typing.SnakNoValue = {
+                "snaktype": "novalue",
+                "property": predicate_local_name,
+            }
+            statement = _new_statement(qid, novalue_snak)
+            _item_property_claims(item, pid).append(statement)
+            _update_statement(
+                state=state,
+                qid=qid,
+                statement_subject=object,
+                statement=statement,
+            )
+            assert statement["mainsnak"] != novalue_snak
+
+        elif predicate == WIKIDATABOTS.editSummary:
+            state.edit_summaries[qid] = object.toPython()
+
+        else:
+            logger.error(
+                "NotImplemented: Unknown wd triple: %s %s %s",
+                item_subject,
+                predicate,
+                object,
+            )
 
 
 def process_graph(
@@ -659,123 +728,17 @@ def process_graph(
     data = PREFIXES + input.read()
     graph.parse(data=data)
 
-    items, item_pages = _prefetch_item_pages(graph=graph, user_agent=user_agent)
+    items = _prefetch_items(graph=graph, user_agent=user_agent)
 
     state = ProcessState(
         graph=graph,
         edit_summaries={},
-        user_agent=user_agent,
         property_datatypes=_prefetch_property_datatypes(
             graph=graph, user_agent=user_agent
         ),
+        original_items=deepcopy(items),
         items=items,
-        item_pages=item_pages,
     )
-
-    changed_claims: dict[str, set[HashableClaim]] = defaultdict(set)
-
-    def mark_changed(qid: str, claim: pywikibot.Claim, did_change: bool = True) -> None:
-        assert qid.startswith("Q"), qid
-        if did_change:
-            changed_claims[qid].add(HashableClaim(claim))
-
-    def visit_wd_subject(qid: str, predicate: URIRef, object: AnyRDFObject) -> None:
-        assert qid.startswith("Q"), qid
-        predicate_prefix, predicate_local_name = _compute_qname(predicate)
-
-        if predicate_prefix == "wdt":
-            target = _resolve_object(graph, object)
-            did_change, claim = _item_append_claim_target(
-                state, qid, predicate_local_name, target
-            )
-            if claim.rank == "deprecated":
-                logger.warning("DeprecatedClaim <%s> already exists", _claim_uri(claim))
-            mark_changed(qid, claim, did_change)
-
-        elif predicate_prefix == "p" and isinstance(object, BNode):
-            property_claim = pywikibot.Claim(site=SITE, pid=predicate_local_name)
-            # TODO: Avoid mutating pywikibot.ItemPage
-            item_page: pywikibot.ItemPage = state.item_pages[qid]
-            if predicate_local_name not in item_page.claims:
-                item_page.claims[predicate_local_name] = []
-            item_page.claims[predicate_local_name].append(property_claim)
-            mark_changed(qid, property_claim)
-
-            for predicate, p_object in _predicate_objects(graph, object):
-                visit_wds_subject(qid, property_claim, predicate, p_object)
-
-        elif predicate == WIKIDATABOTS.editSummary:
-            state.edit_summaries[qid] = object.toPython()
-
-        else:
-            logger.error(
-                "NotImplemented: Unknown wd triple: %s %s %s",
-                subject,
-                predicate,
-                object,
-            )
-
-    def visit_wds_subject(
-        qid: str,
-        claim: pywikibot.Claim,
-        predicate: URIRef,
-        object: AnyRDFObject,
-    ) -> None:
-        assert qid.startswith("Q"), qid
-        predicate_prefix, predicate_local_name = _compute_qname(predicate)
-
-        if predicate_prefix == "pq" or predicate_prefix == "pqv":
-            target = _resolve_object(graph, object)
-            did_change = _claim_append_qualifer(
-                state, claim, predicate_local_name, target
-            )
-            mark_changed(qid, claim, did_change)
-
-        elif predicate_prefix == "pqe" or predicate_prefix == "pqve":
-            if _graph_empty_node(graph, object):
-                if predicate_local_name in claim.qualifiers:
-                    del claim.qualifiers[predicate_local_name]
-                    mark_changed(qid, claim, True)
-            else:
-                target = _resolve_object(graph, object)
-                did_change = _claim_set_qualifer(
-                    state, claim, predicate_local_name, target
-                )
-                mark_changed(qid, claim, did_change)
-
-        elif predicate_prefix == "ps":
-            target = _resolve_object(graph, object)
-            assert claim.getID() == predicate_local_name
-            did_change = _claim_set_target(state, claim, target)
-            mark_changed(qid, claim, did_change)
-
-        elif predicate_prefix == "psv":
-            target = _resolve_object(graph, object)
-            assert claim.getID() == predicate_local_name
-            did_change = _claim_set_target(state, claim, target)
-            mark_changed(qid, claim, did_change)
-
-        elif predicate == WIKIBASE.rank:
-            assert isinstance(object, URIRef)
-            did_change = _claim_set_rank(claim, object)
-            mark_changed(qid, claim, did_change)
-
-        elif predicate == PROV.wasDerivedFrom or predicate == PROV.wasOnlyDerivedFrom:
-            assert isinstance(object, BNode)
-            reference = _resolve_object_bnode_reference(state, object)
-            source = _pywikibot_claim_source_from_json(reference)
-            prev_sources = claim.sources.copy()
-            if predicate == PROV.wasOnlyDerivedFrom:
-                claim.sources = [source]
-            else:
-                claim.sources.append(source)
-            mark_changed(qid, claim, claim.sources != prev_sources)
-
-        elif predicate == WIKIDATABOTS.editSummary:
-            state.edit_summaries[qid] = object.toPython()
-
-        else:
-            logger.error("NotImplemented: Unknown wds triple: %s %s", predicate, object)
 
     for subject in _subjects(graph):
         if isinstance(subject, BNode):
@@ -786,14 +749,17 @@ def process_graph(
 
         if prefix == "wd":
             assert isinstance(subject, URIRef)
-            for predicate, object in _predicate_objects(graph, subject):
-                visit_wd_subject(local_name, predicate, object)
+            _update_item(state, _qid(local_name), subject)
 
         elif prefix == "wds":
             assert isinstance(subject, URIRef)
             qid, claim = _find_claim_guid(state, local_name)
-            for predicate, object in _predicate_objects(graph, subject):
-                visit_wds_subject(qid, claim, predicate, object)
+            _update_statement(
+                state=state,
+                qid=qid,
+                statement_subject=subject,
+                statement=claim,
+            )
 
         elif subject == WIKIDATABOTS.testSubject:
             assert isinstance(subject, URIRef)
@@ -804,18 +770,20 @@ def process_graph(
         else:
             logger.error("NotImplemented: Unknown subject: %s", subject)
 
-    for qid, hclaims in changed_claims.items():
+    changed_statements: dict[str, list[wikidata_typing.Statement]] = {}
+    for item, statement in _detect_changed_claims(state):
+        qid = item["id"]
+        if qid not in changed_statements:
+            changed_statements[qid] = []
+        changed_statements[qid].append(statement)
+
+    for qid, statements in changed_statements.items():
         if qid in blocked_qids:
             logger.warning("Skipping edit, %s is blocked", qid)
             continue
-
         summary: str | None = state.edit_summaries.get(qid)
-        statements = [_pywikibot_claim_to_json(hclaim.claim) for hclaim in hclaims]
-        assert len(statements) > 0, "No claims to save"
-        item: wikidata_typing.Item = state.items[qid]
-        assert item["id"] == qid
-        assert item["lastrevid"] == state.item_pages[qid].latest_revision_id
-        yield (item, statements, summary)
+        item = state.items[qid]
+        yield item, statements, summary
 
 
 def fetch_page_qids(title: str) -> set[str]:

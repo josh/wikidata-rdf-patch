@@ -139,7 +139,8 @@ def test_delete_prop_qualifer() -> None:
     assert summary is None
     assert len(claims) == 1
     assert claims[0]["mainsnak"]["property"] == "P4947"
-    assert claims[0].get("qualifiers") is None
+    assert claims[0].get("qualifiers", {}) == {}
+    assert claims[0].get("qualifiers-order", []) == []
 
 
 def test_noop_change_prop_statement() -> None:
@@ -323,5 +324,5 @@ def test_update_statement_reference() -> None:
     assert claims[0]["references"][0]["snaks"]["P813"][0]["datavalue"]["type"] == "time"
     assert (
         claims[0]["references"][0]["snaks"]["P813"][0]["datavalue"]["value"]["time"]
-        == "+00000002024-01-01T00:00:00Z"
+        == "2024-01-01T00:00:00Z"
     )
