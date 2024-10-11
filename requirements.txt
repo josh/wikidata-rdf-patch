@@ -4,7 +4,7 @@ click==8.1.7
     # via wikidata-rdf-patch (pyproject.toml)
 iniconfig==2.0.0
     # via pytest
-isodate==0.6.1
+isodate==0.7.2
     # via rdflib
 mypy==1.11.2
     # via wikidata-rdf-patch (pyproject.toml)
