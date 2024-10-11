@@ -41,4 +41,4 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           VERSION=${TAG#v}
-          gh release create "$TAG" --title="$VERSION" --draft dist/*
+          gh release create "$TAG" --title="$VERSION" dist/*
