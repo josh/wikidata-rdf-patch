@@ -1,6 +1,5 @@
 import datetime
 import itertools
-import json
 import logging
 import re
 import urllib.parse
@@ -1018,31 +1017,3 @@ def process_graph(
         assert len(statements) > 0
         lastrevid = items[qid]["lastrevid"]
         yield qid, lastrevid, statements, summary
-
-
-def fetch_page_qids(title: str) -> set[str]:
-    if not title:
-        return set()
-    assert not title.startswith("http"), "Expected title, not URL"
-
-    query = urllib.parse.urlencode(
-        {
-            "action": "query",
-            "format": "json",
-            "titles": title,
-            "prop": "extracts",
-            "explaintext": "1",
-        }
-    )
-    url = f"https://www.wikidata.org/w/api.php?{query}"
-
-    with urllib.request.urlopen(url) as response:
-        data = response.read()
-        assert isinstance(data, bytes)
-    data = json.loads(data)
-
-    pages = data["query"]["pages"]
-    assert len(pages) == 1, "Expected one page"
-    page = next(iter(pages.values()))
-    text = page["extract"]
-    return set(re.findall(r"Q[0-9]+", text))

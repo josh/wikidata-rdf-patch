@@ -9,7 +9,7 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 import wikidata_rdf_patch.actions_logging as actions_logging
 from wikidata_rdf_patch import mediawiki_api
 
-from .rdf_patch import fetch_page_qids, process_graph
+from .rdf_patch import process_graph
 
 actions_logging.setup()
 logger = logging.getLogger("wikidata-rdf-patch")
@@ -79,12 +79,16 @@ def main(
 
     blocked_qids: set[str] = set()
     if blocklist_url.startswith("https://www.wikidata.org/wiki/"):
-        blocked_qids = fetch_page_qids(
-            title=blocklist_url.removeprefix("https://www.wikidata.org/wiki/")
+        blocked_qids = mediawiki_api.fetch_page_qids(
+            title=blocklist_url.removeprefix("https://www.wikidata.org/wiki/"),
+            user_agent=user_agent,
         )
         logger.info("Loaded %i QIDs from blocklist", len(blocked_qids))
     elif not blocklist_url.startswith("http"):
-        blocked_qids = fetch_page_qids(title=blocklist_url)
+        blocked_qids = mediawiki_api.fetch_page_qids(
+            title=blocklist_url,
+            user_agent=user_agent,
+        )
         logger.info("Loaded %i QIDs from blocklist", len(blocked_qids))
 
     edits = process_graph(input=input, blocked_qids=blocked_qids, user_agent=user_agent)

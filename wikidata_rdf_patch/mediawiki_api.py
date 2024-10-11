@@ -1,6 +1,7 @@
 import http.cookiejar
 import json
 import logging
+import re
 import time
 import urllib.parse
 import urllib.request
@@ -280,3 +281,30 @@ def wbeditentity(
                 raise e
 
     raise Exception("out of retries")
+
+
+def fetch_page_qids(title: str, user_agent: str) -> set[str]:
+    if not title:
+        return set()
+    assert not title.startswith("http"), "Expected title, not URL"
+
+    params = {
+        "titles": title,
+        "prop": "extracts",
+        "explaintext": "1",
+    }
+
+    data = _request(
+        method="GET",
+        action="query",
+        params=params,
+        cookies=http.cookiejar.CookieJar(),
+        user_agent=user_agent,
+        maxlag=DEFAULT_MAXLAG,
+    )
+
+    pages = data["query"]["pages"]
+    assert len(pages) == 1, "Expected one page"
+    page = next(iter(pages.values()))
+    text = page["extract"]
+    return set(re.findall(r"Q[0-9]+", text))
