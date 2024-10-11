@@ -18,7 +18,7 @@ For help, run:
 $ wikidata-rdf-patch --help
 ```
 
-````sh
+```sh
 $ cat statements.ttl
 wd:Q42 [
   wdt:P31 wd:Q5
@@ -36,7 +36,7 @@ To contribute to this tool, first checkout the code. Then create a new virtual e
 $ cd wikidata-rdf-patch/
 $ uv venv
 $ source .venv/bin/activate
-````
+```
 
 Now install the dependencies and test dependencies:
 
