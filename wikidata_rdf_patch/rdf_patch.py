@@ -656,6 +656,16 @@ def _statements_contains_snak(
     return any(_snak_equals(statement["mainsnak"], snak) for statement in statements)
 
 
+def _statements_contains_direct_snak(
+    statements: Iterable[wikidata_typing.Statement], snak: wikidata_typing.Snak
+) -> bool:
+    return any(
+        _snak_equals(statement["mainsnak"], snak)
+        for statement in statements
+        if statement["rank"] != "deprecated"
+    )
+
+
 def _snaks_equals(
     a: Iterable[wikidata_typing.Snak], b: Iterable[wikidata_typing.Snak]
 ) -> bool:
@@ -919,6 +929,14 @@ def _update_item(
                     "mainsnak": snak,
                 }
                 claims.append(statement)
+            elif not _statements_contains_direct_snak(claims, snak):
+                # TODO: Maybe update rank
+                logger.warning(
+                    "snak for %s/%s %s exists, but is deprecated",
+                    qid,
+                    pid,
+                    object.toPython(),
+                )
 
         elif predicate_prefix == "p":
             assert isinstance(object, BNode)
