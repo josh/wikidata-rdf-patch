@@ -18,10 +18,9 @@ For help, run:
 $ wikidata-rdf-patch --help
 ```
 
-`statements.ttl` in [turtle syntax](<https://en.wikipedia.org/wiki/Turtle_(syntax)>)
+`statements.ttl` in [turtle syntax](<https://en.wikipedia.org/wiki/Turtle_(syntax)>).
 
 ```ttl
-# statements.ttl
 wd:Q42 [
   wdt:P31 wd:Q5 ;
   wdt:P1559 "Douglas Adams"@en
