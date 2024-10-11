@@ -15,6 +15,18 @@ from rdflib.namespace import Namespace, NamespaceManager
 from rdflib.term import BNode, Literal, URIRef
 
 from . import mediawiki_api, wikidata_typing
+from .rdflib import (
+    GraphObject,
+    GraphSubject,
+    graph_empty_node,
+    graph_literal,
+    graph_objects,
+    graph_predicate_objects,
+    graph_predicates,
+    graph_subjects,
+    graph_urirefs,
+    graph_value,
+)
 
 logger = logging.getLogger("rdf_patch")
 
@@ -104,92 +116,8 @@ PREFIX commonsMedia: <http://commons.wikimedia.org/wiki/Special:FilePath/>
 
 """
 
-AnyRDFSubject = URIRef | BNode
-AnyRDFPredicate = URIRef
-AnyRDFObject = URIRef | BNode | Literal
 
 PropertyDatatypes = dict[str, wikidata_typing.DataType]
-
-
-def _graph_urirefs(graph: Graph) -> Iterator[URIRef]:
-    for subject in graph.subjects(unique=True):
-        if isinstance(subject, URIRef):
-            yield subject
-
-    for predicate in graph.predicates(unique=True):
-        if isinstance(predicate, URIRef):
-            yield predicate
-
-    for object in graph.objects(unique=True):
-        if isinstance(object, URIRef):
-            yield object
-
-
-def _subjects(graph: Graph) -> Iterator[AnyRDFSubject]:
-    for subject in graph.subjects(unique=True):
-        assert isinstance(subject, URIRef) or isinstance(subject, BNode)
-        yield subject
-
-
-def _predicates(graph: Graph, subject: AnyRDFSubject) -> Iterator[AnyRDFPredicate]:
-    for predicate in graph.predicates(subject=subject, unique=True):
-        assert isinstance(predicate, URIRef)
-        yield predicate
-
-
-def _predicate_objects(
-    graph: Graph, subject: AnyRDFSubject
-) -> Iterator[tuple[AnyRDFPredicate, AnyRDFObject]]:
-    for predicate, object in graph.predicate_objects(subject, unique=True):
-        assert isinstance(predicate, URIRef)
-        assert (
-            isinstance(object, URIRef)
-            or isinstance(object, BNode)
-            or isinstance(object, Literal)
-        )
-        yield predicate, object
-
-
-def _objects(
-    graph: Graph, subject: AnyRDFSubject, predicate: AnyRDFPredicate
-) -> Iterator[AnyRDFObject]:
-    for object in graph.objects(subject, predicate, unique=True):
-        assert (
-            isinstance(object, URIRef)
-            or isinstance(object, BNode)
-            or isinstance(object, Literal)
-        )
-        yield object
-
-
-def _value(
-    graph: Graph, subject: AnyRDFSubject, predicate: AnyRDFPredicate
-) -> AnyRDFObject | None:
-    objects = list(_objects(graph, subject, predicate))
-    if len(objects) == 1:
-        return objects[0]
-    elif len(objects) > 1:
-        logger.warning(f"multiple objects for {subject} {predicate}")
-        return objects[0]
-    else:
-        return None
-
-
-def _literal(
-    graph: Graph, subject: AnyRDFSubject, predicate: AnyRDFPredicate
-) -> Literal | None:
-    value = _value(graph, subject, predicate)
-    if value and isinstance(value, Literal):
-        return value
-    elif value and not isinstance(value, Literal):
-        logger.warning(f"non-literal value for {subject} {predicate}: {value}")
-        return None
-    else:
-        return None
-
-
-def _graph_empty_node(graph: Graph, object: AnyRDFObject) -> bool:
-    return isinstance(object, BNode) and len(list(graph.predicate_objects(object))) == 0
 
 
 def _compute_qname(uri: URIRef) -> tuple[str, str]:
@@ -240,14 +168,14 @@ def _resolve_object_uriref(
 def _resolve_object_bnode_time_value(
     graph: Graph, object: BNode
 ) -> wikidata_typing.TimeDataValue:
-    if value := _literal(graph, object, WIKIBASE.timeValue):
+    if value := graph_literal(graph, object, WIKIBASE.timeValue):
         assert value.datatype is None or value.datatype == XSD.dateTime
-    if precision := _literal(graph, object, WIKIBASE.timePrecision):
+    if precision := graph_literal(graph, object, WIKIBASE.timePrecision):
         assert precision.datatype == XSD.integer
         assert 0 <= precision.toPython() <= 14
-    if timezone := _literal(graph, object, WIKIBASE.timeTimezone):
+    if timezone := graph_literal(graph, object, WIKIBASE.timeTimezone):
         assert timezone.datatype == XSD.integer
-    if calendar_model := _value(graph, object, WIKIBASE.timeCalendarModel):
+    if calendar_model := graph_value(graph, object, WIKIBASE.timeCalendarModel):
         assert isinstance(calendar_model, URIRef)
 
     data: wikidata_typing.TimeValue = {
@@ -276,13 +204,13 @@ def _resolve_object_bnode_time_value(
 def _resolve_object_bnode_quantity_value(
     graph: Graph, object: BNode
 ) -> wikidata_typing.QuantityDataValue:
-    if amount := _literal(graph, object, WIKIBASE.quantityAmount):
+    if amount := graph_literal(graph, object, WIKIBASE.quantityAmount):
         assert amount.datatype == XSD.decimal
-    if upper_bound := _literal(graph, object, WIKIBASE.quantityUpperBound):
+    if upper_bound := graph_literal(graph, object, WIKIBASE.quantityUpperBound):
         assert upper_bound.datatype == XSD.decimal
-    if lower_bound := _literal(graph, object, WIKIBASE.quantityLowerBound):
+    if lower_bound := graph_literal(graph, object, WIKIBASE.quantityLowerBound):
         assert lower_bound.datatype == XSD.decimal
-    if unit := _value(graph, object, WIKIBASE.quantityUnit):
+    if unit := graph_value(graph, object, WIKIBASE.quantityUnit):
         assert isinstance(unit, URIRef)
 
     data: wikidata_typing.QuantityValue = {
@@ -304,7 +232,7 @@ def _resolve_object_bnode_quantity_value(
 def _resolve_object_bnode(
     graph: Graph, object: BNode, rdf_type: URIRef | None = None
 ) -> wikidata_typing.QuantityDataValue | wikidata_typing.TimeDataValue:
-    bnode_type = rdf_type or _value(graph, object, RDF.type)
+    bnode_type = rdf_type or graph_value(graph, object, RDF.type)
     if bnode_type == WIKIBASE.TimeValue:
         return _resolve_object_bnode_time_value(graph, object)
     elif bnode_type == WIKIBASE.QuantityValue:
@@ -373,7 +301,7 @@ def _resolve_object_literal(
         raise NotImplementedError(f"not implemented datatype: {object.datatype}")
 
 
-def _resolve_object(graph: Graph, object: AnyRDFObject) -> wikidata_typing.DataValue:
+def _resolve_object(graph: Graph, object: GraphObject) -> wikidata_typing.DataValue:
     if isinstance(object, URIRef):
         return _resolve_object_uriref(object)
     elif isinstance(object, BNode):
@@ -386,7 +314,7 @@ def _resolve_snak(
     graph: Graph,
     property_datatypes: PropertyDatatypes,
     pid: str,
-    object: AnyRDFObject,
+    object: GraphObject,
 ) -> wikidata_typing.Snak:
     assert pid.startswith("P"), pid
     datatype = property_datatypes[pid]
@@ -401,10 +329,10 @@ def _resolve_snak(
     return snak
 
 
-def _resolve_reference_snaks_order(graph: Graph, subject: AnyRDFSubject) -> list[str]:
+def _resolve_reference_snaks_order(graph: Graph, subject: GraphSubject) -> list[str]:
     snaks_order: list[str] = []
 
-    for predicate in _predicates(graph, subject):
+    for predicate in graph_predicates(graph, subject):
         predicate_prefix, predicate_local_name = _compute_qname(predicate)
         if predicate_prefix.startswith("pr") and predicate_local_name.startswith("P"):
             if predicate_local_name not in snaks_order:
@@ -423,11 +351,11 @@ def _resolve_object_bnode_reference(
         if pid not in snaks:
             snaks[pid] = []
 
-        for pr_object in _objects(graph, object, PR[pid]):
+        for pr_object in graph_objects(graph, object, PR[pid]):
             snak = _resolve_snak(graph, property_datatypes, pid, pr_object)
             snaks[pid].append(snak)
 
-        for prv_object in _objects(graph, object, PRV[pid]):
+        for prv_object in graph_objects(graph, object, PRV[pid]):
             snak = _resolve_snak(graph, property_datatypes, pid, prv_object)
             snaks[pid].append(snak)
 
@@ -442,10 +370,10 @@ def _resolve_object_bnode_reference(
 
 
 def _resolve_statement_references(
-    graph: Graph, property_datatypes: PropertyDatatypes, subject: AnyRDFSubject
+    graph: Graph, property_datatypes: PropertyDatatypes, subject: GraphSubject
 ) -> list[wikidata_typing.Reference]:
     references: list[wikidata_typing.Reference] = []
-    for prov in _objects(graph, subject, PROV.wasDerivedFrom):
+    for prov in graph_objects(graph, subject, PROV.wasDerivedFrom):
         assert isinstance(prov, BNode)
         reference = _resolve_object_bnode_reference(graph, property_datatypes, prov)
         references.append(reference)
@@ -453,9 +381,9 @@ def _resolve_statement_references(
 
 
 def _resolve_statement_exclusive_references(
-    graph: Graph, property_datatypes: PropertyDatatypes, subject: AnyRDFSubject
+    graph: Graph, property_datatypes: PropertyDatatypes, subject: GraphSubject
 ) -> list[wikidata_typing.Reference]:
-    for prov in _objects(graph, subject, PROV.wasOnlyDerivedFrom):
+    for prov in graph_objects(graph, subject, PROV.wasOnlyDerivedFrom):
         assert isinstance(prov, BNode)
         reference = _resolve_object_bnode_reference(graph, property_datatypes, prov)
         return [reference]
@@ -465,12 +393,12 @@ def _resolve_statement_exclusive_references(
 def _resolve_statement_snak(
     graph: Graph,
     property_datatypes: PropertyDatatypes,
-    subject: AnyRDFSubject,
+    subject: GraphSubject,
     pid: str,
 ) -> wikidata_typing.Snak | None:
-    if psv_object := _value(graph, subject, PSV[pid]):
+    if psv_object := graph_value(graph, subject, PSV[pid]):
         return _resolve_snak(graph, property_datatypes, pid, psv_object)
-    elif ps_object := _value(graph, subject, PS[pid]):
+    elif ps_object := graph_value(graph, subject, PS[pid]):
         return _resolve_snak(graph, property_datatypes, pid, ps_object)
     return None
 
@@ -483,19 +411,19 @@ _RANKS: dict[str, wikidata_typing.Rank] = {
 
 
 def _resolve_statement_rank(
-    graph: Graph, subject: AnyRDFSubject
+    graph: Graph, subject: GraphSubject
 ) -> wikidata_typing.Rank | None:
-    if rank_uri := _value(graph, subject, WIKIBASE.rank):
+    if rank_uri := graph_value(graph, subject, WIKIBASE.rank):
         assert isinstance(rank_uri, URIRef)
         return _RANKS[rank_uri]
     return None
 
 
 def _resolve_statement_qualifiers_order(
-    graph: Graph, subject: AnyRDFSubject
+    graph: Graph, subject: GraphSubject
 ) -> list[str]:
     order: list[str] = []
-    for predicate in _predicates(graph, subject):
+    for predicate in graph_predicates(graph, subject):
         predicate_prefix, predicate_local_name = _compute_qname(predicate)
         if predicate_prefix.startswith("pq"):
             order.append(predicate_local_name)
@@ -505,25 +433,25 @@ def _resolve_statement_qualifiers_order(
 def _resolve_statement_qualifiers(
     graph: Graph,
     property_datatypes: PropertyDatatypes,
-    subject: AnyRDFSubject,
+    subject: GraphSubject,
     pid: str,
 ) -> list[wikidata_typing.Snak]:
     assert pid.startswith("P"), pid
     qualifiers: list[wikidata_typing.Snak] = []
 
-    for pqv_object in _objects(graph, subject, PQ[pid]):
+    for pqv_object in graph_objects(graph, subject, PQ[pid]):
         snak = _resolve_snak(graph, property_datatypes, pid, pqv_object)
         qualifiers.append(snak)
 
-    for pqv_object in _objects(graph, subject, PQV[pid]):
+    for pqv_object in graph_objects(graph, subject, PQV[pid]):
         snak = _resolve_snak(graph, property_datatypes, pid, pqv_object)
         qualifiers.append(snak)
 
-    if pqve_object := _value(graph, subject, PQE[pid]):
+    if pqve_object := graph_value(graph, subject, PQE[pid]):
         snak = _resolve_snak(graph, property_datatypes, pid, pqve_object)
         qualifiers = [snak]
 
-    if pqve_object := _value(graph, subject, PQVE[pid]):
+    if pqve_object := graph_value(graph, subject, PQVE[pid]):
         snak = _resolve_snak(graph, property_datatypes, pid, pqve_object)
         qualifiers = [snak]
 
@@ -736,7 +664,7 @@ def _new_statement(
         graph, property_datatypes, subject
     ) or _resolve_statement_references(graph, property_datatypes, subject)
 
-    if edit_summary_literal := _literal(graph, subject, WIKIDATABOTS.editSummary):
+    if edit_summary_literal := graph_literal(graph, subject, WIKIDATABOTS.editSummary):
         edit_summary = edit_summary_literal.toPython()
 
     statement: wikidata_typing.Statement = {
@@ -781,7 +709,7 @@ def _detect_changed_claims(
 def _prefetch_items(graph: Graph, user_agent: str) -> dict[str, wikidata_typing.Item]:
     qids: set[str] = set()
 
-    for uri in _graph_urirefs(graph):
+    for uri in graph_urirefs(graph):
         _, local_name = _compute_qname(uri)
         if re.match(r"^Q\d+$", local_name):
             qids.add(local_name)
@@ -810,7 +738,7 @@ def _prefetch_items(graph: Graph, user_agent: str) -> dict[str, wikidata_typing.
 def _prefetch_property_datatypes(graph: Graph, user_agent: str) -> PropertyDatatypes:
     pids: set[str] = set()
 
-    for uri in _graph_urirefs(graph):
+    for uri in graph_urirefs(graph):
         _, local_name = _compute_qname(uri)
         if re.match(r"^P\d+$", local_name):
             pids.add(local_name)
@@ -836,7 +764,7 @@ def _update_statement(
     graph: Graph,
     property_datatypes: PropertyDatatypes,
     qid: str,
-    statement_subject: AnyRDFSubject,
+    statement_subject: GraphSubject,
     statement: wikidata_typing.Statement,
     edit_summaries: set[str],
 ) -> None:
@@ -873,7 +801,7 @@ def _update_statement(
         ):
             statement["references"] = new_references
 
-    for predicate, object in _predicate_objects(graph, statement_subject):
+    for predicate, object in graph_predicate_objects(graph, statement_subject):
         predicate_prefix, predicate_local_name = _compute_qname(predicate)
 
         if predicate_prefix == "pq" or predicate_prefix == "pqv":
@@ -885,7 +813,7 @@ def _update_statement(
 
         elif predicate_prefix == "pqe" or predicate_prefix == "pqve":
             pid = _pid(predicate_local_name)
-            if _graph_empty_node(graph, object):
+            if graph_empty_node(graph, object):
                 _delete_statement_property_qualifiers(statement, pid)
             else:
                 snak = _resolve_snak(graph, property_datatypes, pid, object)
@@ -894,7 +822,7 @@ def _update_statement(
                     qualifiers.clear()
                     qualifiers.append(snak)
 
-    if edit_summary_literal := _literal(
+    if edit_summary_literal := graph_literal(
         graph, statement_subject, WIKIDATABOTS.editSummary
     ):
         edit_summaries.add(edit_summary_literal.toPython())
@@ -904,15 +832,17 @@ def _update_item(
     graph: Graph,
     property_datatypes: PropertyDatatypes,
     item: wikidata_typing.Item,
-    item_subject: AnyRDFSubject,
+    item_subject: GraphSubject,
     edit_summaries: set[str],
 ) -> None:
     qid = item["id"]
 
-    if edit_summary_literal := _literal(graph, item_subject, WIKIDATABOTS.editSummary):
+    if edit_summary_literal := graph_literal(
+        graph, item_subject, WIKIDATABOTS.editSummary
+    ):
         edit_summaries.add(edit_summary_literal.toPython())
 
-    for predicate, object in _predicate_objects(graph, item_subject):
+    for predicate, object in graph_predicate_objects(graph, item_subject):
         predicate_prefix, predicate_local_name = _compute_qname(predicate)
 
         if predicate_prefix == "wdt":
@@ -967,7 +897,7 @@ def process_graph(
 
     edit_summaries: dict[str, set[str]] = defaultdict(lambda: set())
 
-    for subject in _subjects(graph):
+    for subject in graph_subjects(graph):
         if isinstance(subject, BNode):
             continue
 
