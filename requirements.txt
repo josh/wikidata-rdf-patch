@@ -20,7 +20,7 @@ pytest==8.3.3
     # via wikidata-rdf-patch (pyproject.toml)
 rdflib==7.1.1
     # via wikidata-rdf-patch (pyproject.toml)
-ruff==0.7.2
+ruff==0.8.0
     # via wikidata-rdf-patch (pyproject.toml)
 six==1.16.0
     # via isodate
