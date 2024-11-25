@@ -24,7 +24,7 @@ ruff==0.7.2
     # via wikidata-rdf-patch (pyproject.toml)
 six==1.16.0
     # via isodate
-tqdm==4.67.0
+tqdm==4.67.1
     # via wikidata-rdf-patch (pyproject.toml)
 types-tqdm==4.66.0.20240417
     # via wikidata-rdf-patch (pyproject.toml)
