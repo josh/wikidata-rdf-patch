@@ -26,7 +26,7 @@ six==1.16.0
     # via isodate
 tqdm==4.67.0
     # via wikidata-rdf-patch (pyproject.toml)
-types-tqdm==4.66.0.20240417
+types-tqdm==4.67.0.20241119
     # via wikidata-rdf-patch (pyproject.toml)
 typing-extensions==4.12.2
     # via mypy
