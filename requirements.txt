@@ -22,7 +22,7 @@ rdflib==7.1.1
     # via wikidata-rdf-patch (pyproject.toml)
 ruff==0.8.0
     # via wikidata-rdf-patch (pyproject.toml)
-six==1.16.0
+six==1.17.0
     # via isodate
 tqdm==4.67.1
     # via wikidata-rdf-patch (pyproject.toml)
