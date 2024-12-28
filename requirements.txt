@@ -4,8 +4,6 @@ click==8.1.8
     # via wikidata-rdf-patch (pyproject.toml)
 iniconfig==2.0.0
     # via pytest
-isodate==0.6.1
-    # via rdflib
 mypy==1.14.0
     # via wikidata-rdf-patch (pyproject.toml)
 mypy-extensions==1.0.0
@@ -20,13 +18,15 @@ pytest==8.3.4
     # via wikidata-rdf-patch (pyproject.toml)
 rdflib==7.1.1
     # via wikidata-rdf-patch (pyproject.toml)
-ruff==0.8.0
+ruff==0.8.4
     # via wikidata-rdf-patch (pyproject.toml)
-six==1.17.0
-    # via isodate
 tqdm==4.67.1
     # via wikidata-rdf-patch (pyproject.toml)
-types-tqdm==4.67.0.20241119
+types-requests==2.32.0.20241016
+    # via types-tqdm
+types-tqdm==4.67.0.20241221
     # via wikidata-rdf-patch (pyproject.toml)
 typing-extensions==4.12.2
     # via mypy
+urllib3==2.3.0
+    # via types-requests
