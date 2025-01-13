@@ -18,7 +18,7 @@ pytest==8.3.4
     # via wikidata-rdf-patch (pyproject.toml)
 rdflib==7.1.1
     # via wikidata-rdf-patch (pyproject.toml)
-ruff==0.8.4
+ruff==0.9.1
     # via wikidata-rdf-patch (pyproject.toml)
 tqdm==4.67.1
     # via wikidata-rdf-patch (pyproject.toml)
