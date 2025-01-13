@@ -16,7 +16,7 @@ pyparsing==3.2.1
     # via rdflib
 pytest==8.3.4
     # via wikidata-rdf-patch (pyproject.toml)
-rdflib==7.1.1
+rdflib==7.1.2
     # via wikidata-rdf-patch (pyproject.toml)
 ruff==0.8.4
     # via wikidata-rdf-patch (pyproject.toml)
