@@ -2,7 +2,7 @@
 #    uv pip compile pyproject.toml --all-extras --output-file requirements.txt
 click==8.1.8
     # via wikidata-rdf-patch (pyproject.toml)
-iniconfig==2.0.0
+iniconfig==2.1.0
     # via pytest
 mypy==1.15.0
     # via wikidata-rdf-patch (pyproject.toml)
