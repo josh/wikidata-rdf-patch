@@ -28,5 +28,5 @@ types-tqdm==4.67.0.20241221
     # via wikidata-rdf-patch (pyproject.toml)
 typing-extensions==4.13.1
     # via mypy
-urllib3==2.3.0
+urllib3==2.4.0
     # via types-requests
