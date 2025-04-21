@@ -1,6 +1,6 @@
 [project]
 name = "wikidata-rdf-patch"
-version = "0.1.1"
+version = "0.1.2"
 description = "Edit Wikidata items with RDF"
 readme = "README.md"
 authors = [{ name = "Joshua Peek" }]
