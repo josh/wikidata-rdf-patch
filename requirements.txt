@@ -14,7 +14,7 @@ pluggy==1.6.0
     # via pytest
 pyparsing==3.2.3
     # via rdflib
-pytest==8.3.5
+pytest==8.4.0
     # via wikidata-rdf-patch (pyproject.toml)
 rdflib==7.1.4
     # via wikidata-rdf-patch (pyproject.toml)
