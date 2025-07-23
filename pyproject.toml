@@ -12,7 +12,6 @@ license-files = [ "LICENSE" ]
 authors = [ { name = "Joshua Peek" } ]
 requires-python = ">=3.12"
 classifiers = [
-    "Development Status :: 4 - Beta",
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
