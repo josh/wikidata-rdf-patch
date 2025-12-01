@@ -28,7 +28,7 @@ scripts.wikidata-rdf-patch = "wikidata_rdf_patch.cli:main"
 dev = [
     "build>=1.0,<2",
     "mypy>=1.0,<2",
-    "pytest>=8.0,<9",
+    "pytest>=8.0,<10",
     "ruff>=0.2,<2",
     "types-tqdm>=4.65,<5",
 ]
