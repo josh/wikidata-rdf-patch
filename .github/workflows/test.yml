@@ -7,9 +7,9 @@ jobs:
     runs-on: ubuntu-slim
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@ed21f2f24f8dd64503750218de024bcf64c7250a # v7.1.5
 
       - name: Install dependencies
         run: uv sync
@@ -17,7 +17,7 @@ jobs:
       - name: Build package
         run: uv run python -m build
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: dist
           path: dist/*
@@ -35,9 +35,9 @@ jobs:
 
     steps:
       - name: Checkout main branch
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@ed21f2f24f8dd64503750218de024bcf64c7250a # v7.1.5
 
       - name: Install dependencies
         run: uv sync
