@@ -706,7 +706,9 @@ def _detect_changed_claims(
                 yield item["id"], statement
 
 
-def _prefetch_items(graph: Graph, user_agent: str) -> dict[str, wikidata_typing.Item]:
+def _prefetch_items(
+    graph: Graph, user_agent: str
+) -> tuple[dict[str, wikidata_typing.Item], set[str]]:
     qids: set[str] = set()
 
     for uri in graph_urirefs(graph):
@@ -718,9 +720,10 @@ def _prefetch_items(graph: Graph, user_agent: str) -> dict[str, wikidata_typing.
 
     if len(qids) == 0:
         logger.debug("No items prefetched")
-        return {}
+        return {}, set()
 
     items: dict[str, wikidata_typing.Item] = {}
+    missing_items: set[str] = set()
 
     for qid_batch in itertools.batched(qids, n=50):
         entities = mediawiki_api.wbgetentities(
@@ -728,11 +731,15 @@ def _prefetch_items(graph: Graph, user_agent: str) -> dict[str, wikidata_typing.
             user_agent=user_agent,
         )
         for qid, entity in entities.items():
-            assert entity["type"] == "item"
-            items[qid] = entity
+            if "missing" in entity:
+                logger.warning("%s missing", qid)
+                missing_items.add(qid)
+            else:
+                assert entity["type"] == "item"
+                items[qid] = entity
 
     logger.debug("Prefetched %d items", len(items))
-    return items
+    return items, missing_items
 
 
 def _prefetch_property_datatypes(graph: Graph, user_agent: str) -> PropertyDatatypes:
@@ -892,7 +899,7 @@ def process_graph(
     graph.parse(data=data)
 
     property_datatypes = _prefetch_property_datatypes(graph, user_agent)
-    items = _prefetch_items(graph, user_agent)
+    items, missing_items = _prefetch_items(graph, user_agent)
     original_items = deepcopy(items)
 
     edit_summaries: dict[str, set[str]] = defaultdict(lambda: set())
@@ -907,6 +914,9 @@ def process_graph(
         if prefix == "wd":
             assert isinstance(subject, URIRef)
             qid = _qid(local_name)
+            if qid in missing_items:
+                logger.warning("%s deleted, skipping %s item", qid, subject)
+                continue
             _update_item(
                 graph=graph,
                 property_datatypes=property_datatypes,
@@ -917,6 +927,14 @@ def process_graph(
 
         elif prefix == "wds":
             assert isinstance(subject, URIRef)
+            qid_from_guid = local_name.split("-", 1)[0].upper()
+            if qid_from_guid in missing_items:
+                logger.warning(
+                    "%s deleted, skipping %s statement",
+                    qid_from_guid,
+                    subject,
+                )
+                continue
             qid, claim = _find_claim_guid(items, local_name)
             _update_statement(
                 graph=graph,

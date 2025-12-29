@@ -858,3 +858,11 @@ def test_statement_prov_wasonlyderivedfrom_noop() -> None:
     """
     edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 0
+
+
+def test_item_deleted_modification() -> None:
+    triples = """
+        wd:Q9964271 wdt:P31 wd:Q5.
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 0
