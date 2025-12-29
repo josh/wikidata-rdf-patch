@@ -15,20 +15,21 @@ classifiers = [
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Typing :: Typed",
 ]
 dependencies = [
     "click>=8.2,<9",
-    "rdflib>=7.0,<8",
+    "rdflib>=7,<8",
     "tqdm>=4.65,<5",
 ]
 scripts.wikidata-rdf-patch = "wikidata_rdf_patch.cli:main"
 
 [dependency-groups]
 dev = [
-    "build>=1.0,<2",
-    "mypy>=1.0,<2",
-    "pytest>=8.0,<10",
+    "build>=1,<2",
+    "mypy>=1,<2",
+    "pytest>=8,<10",
     "ruff>=0.2,<2",
     "types-tqdm>=4.65,<5",
 ]

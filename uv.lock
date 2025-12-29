@@ -324,15 +324,15 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "click", specifier = ">=8.2,<9" },
-    { name = "rdflib", specifier = ">=7.0,<8" },
+    { name = "rdflib", specifier = ">=7,<8" },
     { name = "tqdm", specifier = ">=4.65,<5" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "build", specifier = ">=1.0,<2" },
-    { name = "mypy", specifier = ">=1.0,<2" },
-    { name = "pytest", specifier = ">=8.0,<10" },
+    { name = "build", specifier = ">=1,<2" },
+    { name = "mypy", specifier = ">=1,<2" },
+    { name = "pytest", specifier = ">=8,<10" },
     { name = "ruff", specifier = ">=0.2,<2" },
     { name = "types-tqdm", specifier = ">=4.65,<5" },
 ]
