@@ -3,6 +3,7 @@ import json
 import logging
 import re
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -267,6 +268,15 @@ def wbeditentity(
             else:
                 continue
 
+        except urllib.error.HTTPError as e:
+            if e.code == 503 and retries > 0:
+                wait_time = 60.0
+                logger.warning(
+                    "Service unavailable (503). Waiting for %.1f seconds", wait_time
+                )
+                time.sleep(wait_time)
+                continue
+            raise e
         except Error as e:
             # https://www.mediawiki.org/wiki/Manual:Maxlag_parameter
             if e.code == "maxlag" and retries > 0:
