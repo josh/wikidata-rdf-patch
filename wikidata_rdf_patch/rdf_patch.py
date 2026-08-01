@@ -173,14 +173,16 @@ def _resolve_object_uriref(
 def _resolve_object_bnode_time_value(
     graph: Graph, object: BNode
 ) -> wikidata_typing.TimeDataValue:
-    if value := graph_literal(graph, object, WIKIBASE.timeValue):
+    if (value := graph_literal(graph, object, WIKIBASE.timeValue)) is not None:
         assert value.datatype is None or value.datatype == XSD.dateTime
-    if precision := graph_literal(graph, object, WIKIBASE.timePrecision):
+    if (precision := graph_literal(graph, object, WIKIBASE.timePrecision)) is not None:
         assert precision.datatype == XSD.integer
         assert 0 <= precision.toPython() <= 14
-    if timezone := graph_literal(graph, object, WIKIBASE.timeTimezone):
+    if (timezone := graph_literal(graph, object, WIKIBASE.timeTimezone)) is not None:
         assert timezone.datatype == XSD.integer
-    if calendar_model := graph_value(graph, object, WIKIBASE.timeCalendarModel):
+    if (
+        calendar_model := graph_value(graph, object, WIKIBASE.timeCalendarModel)
+    ) is not None:
         assert isinstance(calendar_model, URIRef)
 
     data: wikidata_typing.TimeValue = {
@@ -191,16 +193,16 @@ def _resolve_object_bnode_time_value(
         "timezone": 0,
         "calendarmodel": "https://www.wikidata.org/wiki/Q1985727",
     }
-    if value:
+    if value is not None:
         value_dt = value.toPython()
         if not isinstance(value_dt, datetime.datetime):
             value_dt = datetime.datetime.fromisoformat(value_dt)
         data["time"] = value_dt.strftime("+%Y-%m-%dT%H:%M:%SZ")
-    if precision:
+    if precision is not None:
         data["precision"] = precision.toPython()
-    if timezone:
+    if timezone is not None:
         data["timezone"] = timezone.toPython()
-    if calendar_model:
+    if calendar_model is not None:
         data["calendarmodel"] = str(calendar_model)
     assert data["time"] != "", "missing time value"
     return {"type": "time", "value": data}
@@ -209,26 +211,30 @@ def _resolve_object_bnode_time_value(
 def _resolve_object_bnode_quantity_value(
     graph: Graph, object: BNode
 ) -> wikidata_typing.QuantityDataValue:
-    if amount := graph_literal(graph, object, WIKIBASE.quantityAmount):
+    if (amount := graph_literal(graph, object, WIKIBASE.quantityAmount)) is not None:
         assert amount.datatype == XSD.decimal
-    if upper_bound := graph_literal(graph, object, WIKIBASE.quantityUpperBound):
+    if (
+        upper_bound := graph_literal(graph, object, WIKIBASE.quantityUpperBound)
+    ) is not None:
         assert upper_bound.datatype == XSD.decimal
-    if lower_bound := graph_literal(graph, object, WIKIBASE.quantityLowerBound):
+    if (
+        lower_bound := graph_literal(graph, object, WIKIBASE.quantityLowerBound)
+    ) is not None:
         assert lower_bound.datatype == XSD.decimal
-    if unit := graph_value(graph, object, WIKIBASE.quantityUnit):
+    if (unit := graph_value(graph, object, WIKIBASE.quantityUnit)) is not None:
         assert isinstance(unit, URIRef)
 
     data: wikidata_typing.QuantityValue = {
         "amount": "",
         "unit": "1",
     }
-    if amount:
+    if amount is not None:
         data["amount"] = _format_quantity_decimal(amount)
-    if upper_bound:
+    if upper_bound is not None:
         data["upperBound"] = _format_quantity_decimal(upper_bound)
-    if lower_bound:
+    if lower_bound is not None:
         data["lowerBound"] = _format_quantity_decimal(lower_bound)
-    if unit:
+    if unit is not None:
         data["unit"] = "1" if unit == WD.Q199 else str(unit)
     assert data["amount"] != "", "missing amount value"
     return {"type": "quantity", "value": data}
@@ -402,9 +408,9 @@ def _resolve_statement_snak(
     subject: GraphSubject,
     pid: str,
 ) -> wikidata_typing.Snak | None:
-    if psv_object := graph_value(graph, subject, PSV[pid]):
+    if (psv_object := graph_value(graph, subject, PSV[pid])) is not None:
         return _resolve_snak(graph, property_datatypes, pid, psv_object)
-    elif ps_object := graph_value(graph, subject, PS[pid]):
+    elif (ps_object := graph_value(graph, subject, PS[pid])) is not None:
         return _resolve_snak(graph, property_datatypes, pid, ps_object)
     return None
 
@@ -451,11 +457,11 @@ def _resolve_statement_qualifiers(
         snak = _resolve_snak(graph, property_datatypes, pid, qualifier_object)
         qualifiers.append(snak)
 
-    if pqve_object := graph_value(graph, subject, PQE[pid]):
+    if (pqve_object := graph_value(graph, subject, PQE[pid])) is not None:
         snak = _resolve_snak(graph, property_datatypes, pid, pqve_object)
         qualifiers = [snak]
 
-    if pqve_object := graph_value(graph, subject, PQVE[pid]):
+    if (pqve_object := graph_value(graph, subject, PQVE[pid])) is not None:
         snak = _resolve_snak(graph, property_datatypes, pid, pqve_object)
         qualifiers = [snak]
 

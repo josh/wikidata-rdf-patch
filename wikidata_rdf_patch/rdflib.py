@@ -58,9 +58,9 @@ def graph_literal(
     graph: Graph, subject: GraphSubject, predicate: GraphPredicate
 ) -> Literal | None:
     value = graph_value(graph, subject, predicate)
-    if value and isinstance(value, Literal):
+    if value is not None and isinstance(value, Literal):
         return value
-    elif value and not isinstance(value, Literal):
+    elif value is not None and not isinstance(value, Literal):
         logger.warning(f"non-literal value for {subject} {predicate}: {value}")
         return None
     else:
