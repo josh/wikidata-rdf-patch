@@ -125,6 +125,52 @@ def _format_quantity_decimal(value: Literal) -> str:
     return decimal if decimal.startswith("-") else f"+{decimal.removeprefix('+')}"
 
 
+def _format_datetime_value(value: datetime.datetime, year: int | None = None) -> str:
+    return (
+        f"+{year if year is not None else value.year:04d}"
+        f"-{value.month:02d}-{value.day:02d}"
+        f"T{value.hour:02d}:{value.minute:02d}:{value.second:02d}Z"
+    )
+
+
+def _format_time_value(value: Literal) -> str:
+    if value.datatype == XSD.date:
+        date_value = str(value)
+        if date_value.endswith("Z"):
+            date_value = date_value[:-1]
+        elif (
+            len(date_value) >= 6
+            and date_value[-6] in "+-"
+            and date_value[-3] == ":"
+            and date_value[-5:-3].isdigit()
+            and date_value[-2:].isdigit()
+        ):
+            date_value = date_value[:-6]
+        return f"+{datetime.date.fromisoformat(date_value):%Y-%m-%dT00:00:00Z}"
+
+    value_python = value.toPython()
+    if isinstance(value_python, datetime.datetime):
+        value_dt = value_python
+    else:
+        assert isinstance(value_python, str)
+        value_dt = datetime.datetime.fromisoformat(value_python)
+    if value_dt.tzinfo is None:
+        return _format_datetime_value(value_dt)
+
+    try:
+        return _format_datetime_value(value_dt.astimezone(datetime.UTC))
+    except OverflowError:
+        offset = value_dt.utcoffset()
+        assert offset is not None
+        if value_dt.year == datetime.MINYEAR and offset > datetime.timedelta():
+            normalized = value_dt.replace(year=2, tzinfo=None) - offset
+            return _format_datetime_value(normalized, normalized.year - 1)
+        if value_dt.year == datetime.MAXYEAR and offset < datetime.timedelta():
+            normalized = value_dt.replace(year=9998, tzinfo=None) - offset
+            return _format_datetime_value(normalized, normalized.year + 1)
+        raise
+
+
 def _compute_qname(uri: URIRef) -> tuple[str, str]:
     try:
         prefix, _, name = NS_MANAGER.compute_qname(uri)
@@ -194,10 +240,7 @@ def _resolve_object_bnode_time_value(
         "calendarmodel": "https://www.wikidata.org/wiki/Q1985727",
     }
     if value is not None:
-        value_dt = value.toPython()
-        if not isinstance(value_dt, datetime.datetime):
-            value_dt = datetime.datetime.fromisoformat(value_dt)
-        data["time"] = value_dt.strftime("+%Y-%m-%dT%H:%M:%SZ")
+        data["time"] = _format_time_value(value)
     if precision is not None:
         data["precision"] = precision.toPython()
     if timezone is not None:
@@ -287,7 +330,7 @@ def _resolve_object_literal(
         return {
             "type": "time",
             "value": {
-                "time": object.toPython().strftime("+%Y-%m-%dT%H:%M:%SZ"),
+                "time": _format_time_value(object),
                 "precision": 11,
                 "after": 0,
                 "before": 0,

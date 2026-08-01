@@ -17,6 +17,7 @@ from wikidata_rdf_patch.rdf_patch import (
     PropertyDatatypes,
     _datavalue_equals,
     _delete_statement_property_qualifiers,
+    _format_time_value,
     _prefetch_property_datatypes,
     _resolve_object_bnode_quantity_value,
     _resolve_object_bnode_reference,
@@ -246,6 +247,40 @@ def test_resolve_falsy_rdf_values() -> None:
     datatypes: PropertyDatatypes = {"P1106": "quantity"}
     assert _resolve_statement_snak(graph, datatypes, statement, "P1106") is not None
     assert _resolve_statement_qualifiers(graph, datatypes, statement, "P1106")
+
+
+def test_format_offset_datetime_as_utc() -> None:
+    value = Literal("2012-10-30T03:30:00+03:30", datatype=XSD.dateTime)
+
+    assert _format_time_value(value) == "+2012-10-30T00:00:00Z"
+
+
+def test_format_naive_datetime_without_conversion() -> None:
+    value = Literal("2012-10-30T03:30:00", datatype=XSD.dateTime)
+
+    assert _format_time_value(value) == "+2012-10-30T03:30:00Z"
+
+
+def test_format_date_without_conversion() -> None:
+    value = Literal("2012-10-30", datatype=XSD.date)
+
+    assert _format_time_value(value) == "+2012-10-30T00:00:00Z"
+
+
+def test_format_timezone_date_without_conversion() -> None:
+    offset = Literal("2012-10-30+03:30", datatype=XSD.date)
+    utc = Literal("2012-10-30Z", datatype=XSD.date)
+
+    assert _format_time_value(offset) == "+2012-10-30T00:00:00Z"
+    assert _format_time_value(utc) == "+2012-10-30T00:00:00Z"
+
+
+def test_format_offset_datetime_across_year_bounds() -> None:
+    lower = Literal("0001-01-01T00:00:00+01:00", datatype=XSD.dateTime)
+    upper = Literal("9999-12-31T23:59:59-01:00", datatype=XSD.dateTime)
+
+    assert _format_time_value(lower) == "+0000-12-31T23:00:00Z"
+    assert _format_time_value(upper) == "+10000-01-01T00:59:59Z"
 
 
 def test_item_wdt_add_monolingualtext() -> None:
