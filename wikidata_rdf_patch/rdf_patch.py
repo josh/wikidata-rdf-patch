@@ -754,15 +754,15 @@ def _prefetch_property_datatypes(graph: Graph, user_agent: str) -> PropertyDatat
         logger.debug("No properties prefetched")
         return {}
 
-    entities = mediawiki_api.wbgetentities(
-        ids=sorted(pids),
-        user_agent=user_agent,
-    )
-
     datatypes: PropertyDatatypes = {}
-    for pid, entity in entities.items():
-        assert entity["type"] == "property"
-        datatypes[pid] = entity["datatype"]
+    for pid_batch in itertools.batched(sorted(pids), n=50):
+        entities = mediawiki_api.wbgetentities(
+            ids=list(pid_batch),
+            user_agent=user_agent,
+        )
+        for pid, entity in entities.items():
+            assert entity["type"] == "property"
+            datatypes[pid] = entity["datatype"]
     logger.debug("Prefetched %d property datatypes", len(datatypes))
     return datatypes
 
