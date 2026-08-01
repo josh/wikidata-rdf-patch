@@ -19,6 +19,7 @@ from wikidata_rdf_patch.rdf_patch import (
     _delete_statement_property_qualifiers,
     _format_time_value,
     _prefetch_property_datatypes,
+    _reference_equals,
     _resolve_object_bnode_quantity_value,
     _resolve_object_bnode_reference,
     _resolve_object_bnode_time_value,
@@ -28,7 +29,12 @@ from wikidata_rdf_patch.rdf_patch import (
     _resolve_statement_snak,
     process_graph,
 )
-from wikidata_rdf_patch.wikidata_typing import QuantityDataValue, Statement
+from wikidata_rdf_patch.wikidata_typing import (
+    QuantityDataValue,
+    Reference,
+    SnakValue,
+    Statement,
+)
 
 actions_logging.setup()
 
@@ -281,6 +287,101 @@ def test_format_offset_datetime_across_year_bounds() -> None:
 
     assert _format_time_value(lower) == "+0000-12-31T23:00:00Z"
     assert _format_time_value(upper) == "+10000-01-01T00:59:59Z"
+
+
+def _string_snak(pid: str, value: str) -> SnakValue:
+    return {
+        "snaktype": "value",
+        "property": pid,
+        "datatype": "string",
+        "datavalue": {"type": "string", "value": value},
+    }
+
+
+def _quantity_snak(*, bounded: bool) -> SnakValue:
+    value: QuantityDataValue = {
+        "type": "quantity",
+        "value": {
+            "amount": "+1",
+            "unit": "1",
+        },
+    }
+    if bounded:
+        value["value"]["lowerBound"] = "+0"
+        value["value"]["upperBound"] = "+2"
+    return {
+        "snaktype": "value",
+        "property": "P1106",
+        "datatype": "quantity",
+        "datavalue": value,
+    }
+
+
+def test_reference_equality_ignores_property_and_value_order() -> None:
+    first: Reference = {
+        "snaks-order": ["P854", "P813"],
+        "snaks": {
+            "P854": [_string_snak("P854", "a"), _string_snak("P854", "b")],
+            "P813": [_string_snak("P813", "c")],
+        },
+    }
+    reordered: Reference = {
+        "snaks-order": ["P813", "P854"],
+        "snaks": {
+            "P813": [_string_snak("P813", "c")],
+            "P854": [_string_snak("P854", "b"), _string_snak("P854", "a")],
+        },
+    }
+
+    assert _reference_equals(first, reordered)
+
+
+def test_reference_equality_finds_complete_fuzzy_quantity_matching() -> None:
+    first: Reference = {
+        "snaks-order": ["P1106"],
+        "snaks": {
+            "P1106": [
+                _quantity_snak(bounded=True),
+                _quantity_snak(bounded=False),
+            ]
+        },
+    }
+    reordered: Reference = {
+        "snaks-order": ["P1106"],
+        "snaks": {
+            "P1106": [
+                _quantity_snak(bounded=False),
+                _quantity_snak(bounded=True),
+            ]
+        },
+    }
+
+    assert _reference_equals(first, reordered)
+
+
+def test_reference_equality_retains_value_multiplicity() -> None:
+    first: Reference = {
+        "snaks-order": ["P854"],
+        "snaks": {
+            "P854": [
+                _string_snak("P854", "a"),
+                _string_snak("P854", "a"),
+                _string_snak("P854", "b"),
+            ],
+        },
+    }
+    different: Reference = {
+        "snaks-order": ["P854"],
+        "snaks": {
+            "P854": [
+                _string_snak("P854", "a"),
+                _string_snak("P854", "b"),
+                _string_snak("P854", "b"),
+            ],
+        },
+    }
+
+    assert not _reference_equals(first, different)
 
 
 def test_item_wdt_add_monolingualtext() -> None:
