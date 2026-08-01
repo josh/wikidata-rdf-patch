@@ -1,6 +1,6 @@
 from io import StringIO
 
-import wikidata_rdf_patch.actions_logging as actions_logging
+from wikidata_rdf_patch import actions_logging
 from wikidata_rdf_patch.rdf_patch import process_graph
 
 actions_logging.setup()

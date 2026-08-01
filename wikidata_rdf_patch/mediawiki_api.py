@@ -118,6 +118,10 @@ class LoginError(Exception):
     pass
 
 
+class RetriesExhaustedError(Exception):
+    pass
+
+
 # https://www.wikidata.org/w/api.php?action=help&modules=login
 def _login(session: Session) -> None:
     session.login_token = _token(
@@ -181,9 +185,9 @@ def login(
                 time.sleep(5)
                 continue
             else:
-                raise e
+                raise
 
-    raise Exception("out of retries")
+    raise RetriesExhaustedError("out of retries")
 
 
 # https://www.wikidata.org/w/api.php?action=help&modules=logout
@@ -197,7 +201,6 @@ def logout(session: Session) -> None:
         user_agent=session.user_agent,
         maxlag=session.maxlag,
     )
-    return None
 
 
 def wbgetentities(
@@ -276,7 +279,7 @@ def wbeditentity(
                 )
                 time.sleep(wait_time)
                 continue
-            raise e
+            raise
         except Error as e:
             # https://www.mediawiki.org/wiki/Manual:Maxlag_parameter
             if e.code == "maxlag" and retries > 0:
@@ -288,9 +291,9 @@ def wbeditentity(
                 _login(session=session)
                 continue
             else:
-                raise e
+                raise
 
-    raise Exception("out of retries")
+    raise RetriesExhaustedError("out of retries")
 
 
 def fetch_page_qids(title: str, user_agent: str) -> set[str]:

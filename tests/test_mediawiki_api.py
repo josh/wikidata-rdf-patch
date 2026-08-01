@@ -2,8 +2,7 @@ import os
 
 import pytest
 
-import wikidata_rdf_patch.actions_logging as actions_logging
-import wikidata_rdf_patch.mediawiki_api as mediawiki_api
+from wikidata_rdf_patch import actions_logging, mediawiki_api
 
 actions_logging.setup()
 

@@ -334,9 +334,12 @@ def _resolve_reference_snaks_order(graph: Graph, subject: GraphSubject) -> list[
 
     for predicate in graph_predicates(graph, subject):
         predicate_prefix, predicate_local_name = _compute_qname(predicate)
-        if predicate_prefix.startswith("pr") and predicate_local_name.startswith("P"):
-            if predicate_local_name not in snaks_order:
-                snaks_order.append(predicate_local_name)
+        if (
+            predicate_prefix.startswith("pr")
+            and predicate_local_name.startswith("P")
+            and predicate_local_name not in snaks_order
+        ):
+            snaks_order.append(predicate_local_name)
 
     return snaks_order
 
@@ -543,9 +546,12 @@ def _datavalue_equals(
             b["value"].get("unit") == "1"
             or b["value"].get("unit") == "https://www.wikidata.org/wiki/Q199"
         )
-        if "upperBound" in a["value"] and "upperBound" not in b["value"]:
-            return a["value"]["amount"] == b["value"]["amount"]
-        elif a_unitless and b_unitless:
+        if (
+            "upperBound" in a["value"]
+            and "upperBound" not in b["value"]
+            or a_unitless
+            and b_unitless
+        ):
             return a["value"]["amount"] == b["value"]["amount"]
         else:
             return a == b
@@ -554,9 +560,7 @@ def _datavalue_equals(
 
 
 def _snak_equals(a: wikidata_typing.Snak, b: wikidata_typing.Snak) -> bool:
-    if a["snaktype"] != b["snaktype"]:
-        return False
-    elif a["property"] != b["property"]:
+    if a["snaktype"] != b["snaktype"] or a["property"] != b["property"]:
         return False
     elif a["snaktype"] == "value" and b["snaktype"] == "value":
         return _datavalue_equals(a["datavalue"], b["datavalue"])
@@ -698,11 +702,11 @@ def _detect_changed_claims(
     for item in updated_items.values():
         for statement in _item_statements(item):
             guid = statement.get("id", "")
-            if not guid:
-                yield item["id"], statement
-            elif guid not in original_claims_by_guid:
-                yield item["id"], statement
-            elif statement != original_claims_by_guid[guid]:
+            if (
+                not guid
+                or guid not in original_claims_by_guid
+                or statement != original_claims_by_guid[guid]
+            ):
                 yield item["id"], statement
 
 
@@ -780,14 +784,15 @@ def _update_statement(
     if rank := _resolve_statement_rank(graph, statement_subject):
         statement["rank"] = rank
 
-    if snak := _resolve_statement_snak(
-        graph,
-        property_datatypes,
-        statement_subject,
-        statement["mainsnak"]["property"],
-    ):
-        if not _snak_equals(statement["mainsnak"], snak):
-            statement["mainsnak"] = snak
+    if (
+        snak := _resolve_statement_snak(
+            graph,
+            property_datatypes,
+            statement_subject,
+            statement["mainsnak"]["property"],
+        )
+    ) and not _snak_equals(statement["mainsnak"], snak):
+        statement["mainsnak"] = snak
 
     if new_references := _resolve_statement_references(
         graph, property_datatypes, statement_subject
@@ -853,7 +858,7 @@ def _update_item(
         predicate_prefix, predicate_local_name = _compute_qname(predicate)
 
         if predicate_prefix == "wdt":
-            assert isinstance(object, URIRef) or isinstance(object, Literal)
+            assert isinstance(object, (URIRef, Literal))
             pid = _pid(predicate_local_name)
             snak = _resolve_snak(graph, property_datatypes, pid, object)
             claims = _item_property_claims(item, pid)
@@ -891,9 +896,12 @@ def _update_item(
 
 def process_graph(
     input: TextIO,
-    blocked_qids: set[str] = set(),
+    blocked_qids: set[str] | None = None,
     user_agent: str = mediawiki_api.DEFAULT_USER_AGENT,
 ) -> Iterator[tuple[str, int, list[wikidata_typing.Statement], str | None]]:
+    if blocked_qids is None:
+        blocked_qids = set()
+
     graph = Graph()
     data = PREFIXES + input.read()
     graph.parse(data=data)

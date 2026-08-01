@@ -14,7 +14,7 @@ GraphObject = URIRef | BNode | Literal
 
 def graph_subjects(graph: Graph) -> Iterator[GraphSubject]:
     for subject in graph.subjects(unique=True):
-        assert isinstance(subject, URIRef) or isinstance(subject, BNode)
+        assert isinstance(subject, (URIRef, BNode))
         yield subject
 
 
@@ -29,11 +29,7 @@ def graph_predicate_objects(
 ) -> Iterator[tuple[GraphPredicate, GraphObject]]:
     for predicate, object in graph.predicate_objects(subject, unique=True):
         assert isinstance(predicate, URIRef)
-        assert (
-            isinstance(object, URIRef)
-            or isinstance(object, BNode)
-            or isinstance(object, Literal)
-        )
+        assert isinstance(object, (URIRef, BNode, Literal))
         yield predicate, object
 
 
@@ -41,11 +37,7 @@ def graph_objects(
     graph: Graph, subject: GraphSubject, predicate: GraphPredicate
 ) -> Iterator[GraphObject]:
     for object in graph.objects(subject, predicate, unique=True):
-        assert (
-            isinstance(object, URIRef)
-            or isinstance(object, BNode)
-            or isinstance(object, Literal)
-        )
+        assert isinstance(object, (URIRef, BNode, Literal))
         yield object
 
 
