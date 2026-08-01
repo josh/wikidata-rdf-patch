@@ -2,15 +2,17 @@ from io import StringIO
 
 from rdflib import XSD, BNode, Graph, Literal
 
-from wikidata_rdf_patch import actions_logging
+from wikidata_rdf_patch import actions_logging, mediawiki_api
 from wikidata_rdf_patch.rdf_patch import (
     PQ,
     PQV,
     PR,
     PRV,
     RDF,
+    WDT,
     WIKIBASE,
     PropertyDatatypes,
+    _prefetch_property_datatypes,
     _resolve_object_bnode_reference,
     _resolve_statement_qualifiers,
     _resolve_statement_qualifiers_order,
@@ -80,6 +82,23 @@ def test_full_reference_value_replaces_simple_value() -> None:
     assert snak["snaktype"] == "value"
     assert snak["datavalue"]["type"] == "time"
     assert snak["datavalue"]["value"]["precision"] == 9
+
+
+def test_prefetch_property_datatypes_batches_51_properties() -> None:
+    graph = Graph()
+    subject = BNode()
+    property_numbers = [
+        number for number in range(1000, 1054) if number not in {1008, 1009, 1020}
+    ]
+    for property_number in property_numbers:
+        graph.add((subject, WDT[f"P{property_number}"], Literal(property_number)))
+
+    datatypes = _prefetch_property_datatypes(
+        graph, user_agent=mediawiki_api.DEFAULT_USER_AGENT
+    )
+
+    assert len(datatypes) == 51
+    assert datatypes.keys() == {f"P{number}" for number in property_numbers}
 
 
 def test_item_wdt_add_monolingualtext() -> None:
