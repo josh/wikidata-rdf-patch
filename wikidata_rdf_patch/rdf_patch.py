@@ -504,7 +504,7 @@ def _delete_statement_property_qualifiers(
     assert pid.startswith("P"), pid
     if "qualifiers" in statement and pid in statement["qualifiers"]:
         del statement["qualifiers"][pid]
-    if "qualifiers-order" in statement:
+    if "qualifiers-order" in statement and pid in statement["qualifiers-order"]:
         statement["qualifiers-order"].remove(pid)
 
 

@@ -14,6 +14,7 @@ from wikidata_rdf_patch.rdf_patch import (
     WIKIBASE,
     PropertyDatatypes,
     _datavalue_equals,
+    _delete_statement_property_qualifiers,
     _prefetch_property_datatypes,
     _resolve_object_bnode_quantity_value,
     _resolve_object_bnode_reference,
@@ -21,7 +22,7 @@ from wikidata_rdf_patch.rdf_patch import (
     _resolve_statement_qualifiers_order,
     process_graph,
 )
-from wikidata_rdf_patch.wikidata_typing import QuantityDataValue
+from wikidata_rdf_patch.wikidata_typing import QuantityDataValue, Statement
 
 actions_logging.setup()
 
@@ -166,6 +167,26 @@ def test_quantity_equality_respects_explicit_bounds() -> None:
     }
 
     assert not _datavalue_equals(first, second)
+
+
+def test_delete_missing_statement_qualifier_is_noop() -> None:
+    statement: Statement = {
+        "id": "Q1$00000000-0000-0000-0000-000000000000",
+        "type": "statement",
+        "rank": "normal",
+        "mainsnak": {
+            "snaktype": "novalue",
+            "property": "P31",
+            "datatype": "wikibase-item",
+        },
+        "qualifiers": {},
+        "qualifiers-order": ["P585"],
+    }
+
+    _delete_statement_property_qualifiers(statement, "P580")
+
+    assert statement["qualifiers"] == {}
+    assert statement["qualifiers-order"] == ["P585"]
 
 
 def test_item_wdt_add_monolingualtext() -> None:
