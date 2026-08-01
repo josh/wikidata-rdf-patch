@@ -1,3 +1,5 @@
+import logging
+
 import click
 import pytest
 from click.testing import CliRunner
@@ -55,3 +57,28 @@ def test_invalid_blocklist_url_fails_before_login() -> None:
 
     assert result.exit_code == 2
     assert "Invalid value for --blocklist-url" in result.output
+
+
+def test_dry_run_previews_every_item_and_claim(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    triples = """
+        wd:Q42 wdt:P370 "Dry run preview for Q42".
+        wd:Q115569934 wdt:P370 "Dry run preview for sandbox";
+            wdt:P2536 "dry-run-preview".
+    """
+
+    root_logger = logging.getLogger()
+    original_level = root_logger.level
+    try:
+        root_logger.setLevel(logging.WARNING)
+        result = CliRunner().invoke(main, ["--dry-run"], input=triples)
+    finally:
+        root_logger.setLevel(original_level)
+
+    assert result.exit_code == 0, result.output
+    messages = [record.getMessage() for record in caplog.records]
+    assert "Edit Q42" in messages
+    assert "Edit Q115569934" in messages
+    assert sum(message.startswith(" ⮑ P370 / ") for message in messages) == 2
+    assert sum(message.startswith(" ⮑ P2536 / ") for message in messages) == 1

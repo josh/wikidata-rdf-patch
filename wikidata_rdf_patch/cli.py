@@ -128,6 +128,7 @@ def main(
 ) -> None:
     log_level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(level=log_level)
+    logging.getLogger().setLevel(log_level)
 
     blocklist_title = _blocklist_title(blocklist_url)
 
@@ -152,9 +153,6 @@ def main(
     last_edit: float = 0.0
     pbar = tqdm(list(edits), unit="item")
 
-    if not session:
-        return
-
     with logging_redirect_tqdm():
         for qid, lastrevid, claims, summary in pbar:
             if summary:
@@ -166,6 +164,10 @@ def main(
                 statement_snak = statement.get("id", "(new claim)")
                 logger.info(f" ⮑ {statement_id} / {statement_snak}")
 
+            if dry_run:
+                continue
+
+            assert session is not None
             wait_time = max(0, min_time_between_edits - (time.time() - last_edit))
             if wait_time > 0:
                 logger.debug("Waiting for %.1f seconds", wait_time)
@@ -180,5 +182,5 @@ def main(
             )
             last_edit = time.time()
 
-        if session:
+        if session is not None:
             mediawiki_api.logout(session)
