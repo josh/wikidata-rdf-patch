@@ -639,19 +639,36 @@ def _statements_contains_direct_snak(
 def _snaks_equals(
     a: Iterable[wikidata_typing.Snak], b: Iterable[wikidata_typing.Snak]
 ) -> bool:
-    a_lst = list(a)
-    b_lst = list(b)
-    return len(a_lst) == len(b_lst) and all(
-        _snak_equals(a_lst[i], b_lst[i]) for i in range(len(a_lst))
-    )
+    a_list = list(a)
+    b_list = list(b)
+    if len(a_list) != len(b_list):
+        return False
+
+    matched_a: list[int | None] = [None] * len(b_list)
+
+    def find_match(a_index: int, seen_b: set[int]) -> bool:
+        for b_index, candidate in enumerate(b_list):
+            if b_index in seen_b or not _snak_equals(a_list[a_index], candidate):
+                continue
+            seen_b.add(b_index)
+            previous_a = matched_a[b_index]
+            if previous_a is None or find_match(previous_a, seen_b):
+                matched_a[b_index] = a_index
+                return True
+        return False
+
+    for a_index in range(len(a_list)):
+        if not find_match(a_index, set()):
+            return False
+    return True
 
 
 def _reference_equals(
     a: wikidata_typing.Reference, b: wikidata_typing.Reference
 ) -> bool:
-    if a["snaks-order"] != b["snaks-order"]:
+    if a["snaks"].keys() != b["snaks"].keys():
         return False
-    for pid in a["snaks-order"]:
+    for pid in a["snaks"]:
         if not _snaks_equals(a["snaks"][pid], b["snaks"][pid]):
             return False
     return True
