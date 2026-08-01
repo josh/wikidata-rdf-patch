@@ -18,6 +18,7 @@ from wikidata_rdf_patch.rdf_patch import (
     _prefetch_property_datatypes,
     _resolve_object_bnode_quantity_value,
     _resolve_object_bnode_reference,
+    _resolve_object_literal,
     _resolve_statement_qualifiers,
     _resolve_statement_qualifiers_order,
     process_graph,
@@ -187,6 +188,26 @@ def test_delete_missing_statement_qualifier_is_noop() -> None:
 
     assert statement["qualifiers"] == {}
     assert statement["qualifiers-order"] == ["P585"]
+
+
+def test_resolve_negative_quantity_values() -> None:
+    direct = _resolve_object_literal(Literal(-123, datatype=XSD.decimal))
+    assert direct["type"] == "quantity"
+    assert direct["value"]["amount"] == "-123"
+
+    graph = Graph()
+    quantity = BNode()
+    graph.add((quantity, WIKIBASE.quantityAmount, Literal(-123, datatype=XSD.decimal)))
+    graph.add(
+        (quantity, WIKIBASE.quantityLowerBound, Literal(-124, datatype=XSD.decimal))
+    )
+    graph.add(
+        (quantity, WIKIBASE.quantityUpperBound, Literal(-122, datatype=XSD.decimal))
+    )
+    full = _resolve_object_bnode_quantity_value(graph, quantity)["value"]
+    assert full["amount"] == "-123"
+    assert full["lowerBound"] == "-124"
+    assert full["upperBound"] == "-122"
 
 
 def test_item_wdt_add_monolingualtext() -> None:

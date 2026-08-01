@@ -120,6 +120,11 @@ PREFIX commonsMedia: <http://commons.wikimedia.org/wiki/Special:FilePath/>
 PropertyDatatypes = dict[str, wikidata_typing.DataType]
 
 
+def _format_quantity_decimal(value: Literal) -> str:
+    decimal = str(value.toPython())
+    return decimal if decimal.startswith("-") else f"+{decimal.removeprefix('+')}"
+
+
 def _compute_qname(uri: URIRef) -> tuple[str, str]:
     try:
         prefix, _, name = NS_MANAGER.compute_qname(uri)
@@ -218,11 +223,11 @@ def _resolve_object_bnode_quantity_value(
         "unit": "1",
     }
     if amount:
-        data["amount"] = f"+{amount}"
+        data["amount"] = _format_quantity_decimal(amount)
     if upper_bound:
-        data["upperBound"] = f"+{upper_bound}"
+        data["upperBound"] = _format_quantity_decimal(upper_bound)
     if lower_bound:
-        data["lowerBound"] = f"+{lower_bound}"
+        data["lowerBound"] = _format_quantity_decimal(lower_bound)
     if unit:
         data["unit"] = "1" if unit == WD.Q199 else str(unit)
     assert data["amount"] != "", "missing amount value"
@@ -263,7 +268,7 @@ def _resolve_object_literal(
         return {
             "type": "quantity",
             "value": {
-                "amount": f"+{object.toPython()}",
+                "amount": _format_quantity_decimal(object),
                 "unit": "1",
             },
         }
