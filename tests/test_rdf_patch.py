@@ -5,9 +5,11 @@ from rdflib import XSD, BNode, Graph, Literal
 from wikidata_rdf_patch import actions_logging, mediawiki_api
 from wikidata_rdf_patch.rdf_patch import (
     PQ,
+    PQE,
     PQV,
     PR,
     PRV,
+    PS,
     RDF,
     WD,
     WDT,
@@ -18,9 +20,11 @@ from wikidata_rdf_patch.rdf_patch import (
     _prefetch_property_datatypes,
     _resolve_object_bnode_quantity_value,
     _resolve_object_bnode_reference,
+    _resolve_object_bnode_time_value,
     _resolve_object_literal,
     _resolve_statement_qualifiers,
     _resolve_statement_qualifiers_order,
+    _resolve_statement_snak,
     process_graph,
 )
 from wikidata_rdf_patch.wikidata_typing import QuantityDataValue, Statement
@@ -208,6 +212,40 @@ def test_resolve_negative_quantity_values() -> None:
     assert full["amount"] == "-123"
     assert full["lowerBound"] == "-124"
     assert full["upperBound"] == "-122"
+
+
+def test_resolve_falsy_rdf_values() -> None:
+    graph = Graph()
+
+    quantity = BNode()
+    graph.add((quantity, WIKIBASE.quantityAmount, Literal(0, datatype=XSD.decimal)))
+    graph.add((quantity, WIKIBASE.quantityLowerBound, Literal(0, datatype=XSD.decimal)))
+    graph.add((quantity, WIKIBASE.quantityUpperBound, Literal(0, datatype=XSD.decimal)))
+    quantity_value = _resolve_object_bnode_quantity_value(graph, quantity)["value"]
+    assert quantity_value["amount"] == "+0"
+    assert quantity_value["lowerBound"] == "+0"
+    assert quantity_value["upperBound"] == "+0"
+
+    time = BNode()
+    graph.add(
+        (
+            time,
+            WIKIBASE.timeValue,
+            Literal("2000-01-01T00:00:00Z", datatype=XSD.dateTime),
+        )
+    )
+    graph.add((time, WIKIBASE.timePrecision, Literal(0, datatype=XSD.integer)))
+    graph.add((time, WIKIBASE.timeTimezone, Literal(0, datatype=XSD.integer)))
+    time_value = _resolve_object_bnode_time_value(graph, time)["value"]
+    assert time_value["precision"] == 0
+    assert time_value["timezone"] == 0
+
+    statement = BNode()
+    graph.add((statement, PS.P1106, Literal(0, datatype=XSD.decimal)))
+    graph.add((statement, PQE.P1106, Literal(0, datatype=XSD.decimal)))
+    datatypes: PropertyDatatypes = {"P1106": "quantity"}
+    assert _resolve_statement_snak(graph, datatypes, statement, "P1106") is not None
+    assert _resolve_statement_qualifiers(graph, datatypes, statement, "P1106")
 
 
 def test_item_wdt_add_monolingualtext() -> None:
