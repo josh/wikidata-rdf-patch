@@ -237,7 +237,7 @@ def _resolve_object_bnode_time_value(
         "after": 0,
         "before": 0,
         "timezone": 0,
-        "calendarmodel": "https://www.wikidata.org/wiki/Q1985727",
+        "calendarmodel": "http://www.wikidata.org/entity/Q1985727",
     }
     if value is not None:
         data["time"] = _format_time_value(value)
