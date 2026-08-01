@@ -6,8 +6,7 @@ import click
 from tqdm import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
-import wikidata_rdf_patch.actions_logging as actions_logging
-from wikidata_rdf_patch import mediawiki_api
+from wikidata_rdf_patch import actions_logging, mediawiki_api
 
 from .rdf_patch import process_graph
 
