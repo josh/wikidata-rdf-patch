@@ -1,5 +1,7 @@
 import logging
+import re
 import time
+import urllib.parse
 from typing import TextIO
 
 import click
@@ -12,6 +14,65 @@ from .rdf_patch import process_graph
 
 actions_logging.setup()
 logger = logging.getLogger("wikidata-rdf-patch")
+
+
+def _blocklist_title(value: str) -> str:
+    if not value:
+        return ""
+
+    looks_like_url = (
+        "://" in value
+        or value.startswith("//")
+        or value.lower().startswith(("http:", "https:"))
+    )
+    if not looks_like_url:
+        return value
+
+    error_message = (
+        "must be a page title or a canonical "
+        "https://www.wikidata.org/wiki/<title> URL without a query or fragment"
+    )
+    try:
+        parsed = urllib.parse.urlsplit(value)
+    except ValueError as error:
+        raise click.BadParameter(
+            error_message,
+            param_hint="--blocklist-url",
+        ) from error
+    prefix = "/wiki/"
+    if (
+        parsed.scheme != "https"
+        or parsed.netloc != "www.wikidata.org"
+        or not parsed.path.startswith(prefix)
+        or parsed.query
+        or parsed.fragment
+        or "?" in value
+        or "#" in value
+    ):
+        raise click.BadParameter(
+            error_message,
+            param_hint="--blocklist-url",
+        )
+
+    raw_title = parsed.path.removeprefix(prefix)
+    if re.search(r"%(?![0-9A-Fa-f]{2})", raw_title):
+        raise click.BadParameter(
+            error_message,
+            param_hint="--blocklist-url",
+        )
+    try:
+        title = urllib.parse.unquote_to_bytes(raw_title).decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise click.BadParameter(
+            error_message,
+            param_hint="--blocklist-url",
+        ) from error
+    if not title:
+        raise click.BadParameter(
+            "Wikidata blocklist URL must include a page title",
+            param_hint="--blocklist-url",
+        )
+    return title
 
 
 @click.command()
@@ -68,6 +129,8 @@ def main(
     log_level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(level=log_level)
 
+    blocklist_title = _blocklist_title(blocklist_url)
+
     session: mediawiki_api.Session | None = None
     if not dry_run:
         session = mediawiki_api.login(
@@ -77,15 +140,9 @@ def main(
         )
 
     blocked_qids: set[str] = set()
-    if blocklist_url.startswith("https://www.wikidata.org/wiki/"):
+    if blocklist_title:
         blocked_qids = mediawiki_api.fetch_page_qids(
-            title=blocklist_url.removeprefix("https://www.wikidata.org/wiki/"),
-            user_agent=user_agent,
-        )
-        logger.info("Loaded %i QIDs from blocklist", len(blocked_qids))
-    elif not blocklist_url.startswith("http"):
-        blocked_qids = mediawiki_api.fetch_page_qids(
-            title=blocklist_url,
+            title=blocklist_title,
             user_agent=user_agent,
         )
         logger.info("Loaded %i QIDs from blocklist", len(blocked_qids))

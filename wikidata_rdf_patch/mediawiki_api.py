@@ -299,7 +299,6 @@ def wbeditentity(
 def fetch_page_qids(title: str, user_agent: str) -> set[str]:
     if not title:
         return set()
-    assert not title.startswith("http"), "Expected title, not URL"
 
     params = {
         "titles": title,
