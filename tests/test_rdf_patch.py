@@ -1,6 +1,6 @@
 from io import StringIO
 
-from rdflib import XSD, BNode, Graph, Literal
+from rdflib import XSD, BNode, Graph, Literal, URIRef
 
 from wikidata_rdf_patch import actions_logging, mediawiki_api
 from wikidata_rdf_patch.rdf_patch import (
@@ -15,15 +15,18 @@ from wikidata_rdf_patch.rdf_patch import (
     WDT,
     WIKIBASE,
     PropertyDatatypes,
+    _compute_qname,
     _datavalue_equals,
     _delete_statement_property_qualifiers,
     _format_time_value,
+    _prefetch_items,
     _prefetch_property_datatypes,
     _reference_equals,
     _resolve_object_bnode_quantity_value,
     _resolve_object_bnode_reference,
     _resolve_object_bnode_time_value,
     _resolve_object_literal,
+    _resolve_object_uriref,
     _resolve_statement_qualifiers,
     _resolve_statement_qualifiers_order,
     _resolve_statement_snak,
@@ -382,6 +385,27 @@ def test_reference_equality_retains_value_multiplicity() -> None:
     }
 
     assert not _reference_equals(first, different)
+
+
+def test_resolve_unbound_iri_as_url() -> None:
+    url = URIRef("https://example.com/resources/Q42")
+
+    assert _compute_qname(url) == ("", str(url))
+    assert _resolve_object_uriref(url) == {"type": "string", "value": str(url)}
+
+
+def test_prefetch_ignores_unbound_qid_and_pid_paths() -> None:
+    graph = Graph()
+    graph.add(
+        (
+            URIRef("https://example.com/Q42"),
+            URIRef("https://example.com/P31"),
+            URIRef("https://example.com/resources/Q5"),
+        )
+    )
+
+    assert _prefetch_items(graph, "test-agent") == ({}, set())
+    assert _prefetch_property_datatypes(graph, "test-agent") == {}
 
 
 def test_item_wdt_add_monolingualtext() -> None:

@@ -173,9 +173,9 @@ def _format_time_value(value: Literal) -> str:
 
 def _compute_qname(uri: URIRef) -> tuple[str, str]:
     try:
-        prefix, _, name = NS_MANAGER.compute_qname(uri)
+        prefix, _, name = NS_MANAGER.compute_qname(uri, generate=False)
         return (prefix, name)
-    except ValueError:
+    except (KeyError, ValueError):
         return ("", str(uri))
 
 
@@ -772,10 +772,10 @@ def _prefetch_items(
     qids: set[str] = set()
 
     for uri in graph_urirefs(graph):
-        _, local_name = _compute_qname(uri)
-        if re.match(r"^Q\d+$", local_name):
+        prefix, local_name = _compute_qname(uri)
+        if prefix == "wd" and re.match(r"^Q\d+$", local_name):
             qids.add(local_name)
-        elif m := re.match(r"^(Q\d+|q\d+)-", local_name):
+        elif prefix == "wds" and (m := re.match(r"^(Q\d+|q\d+)-", local_name)):
             qids.add(m.group(1))
 
     if len(qids) == 0:
@@ -804,10 +804,22 @@ def _prefetch_items(
 
 def _prefetch_property_datatypes(graph: Graph, user_agent: str) -> PropertyDatatypes:
     pids: set[str] = set()
+    property_prefixes = {
+        "p",
+        "pq",
+        "pqe",
+        "pqv",
+        "pqve",
+        "pr",
+        "prv",
+        "ps",
+        "psv",
+        "wdt",
+    }
 
     for uri in graph_urirefs(graph):
-        _, local_name = _compute_qname(uri)
-        if re.match(r"^P\d+$", local_name):
+        prefix, local_name = _compute_qname(uri)
+        if prefix in property_prefixes and re.match(r"^P\d+$", local_name):
             pids.add(local_name)
 
     if len(pids) == 0:
