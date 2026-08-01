@@ -224,7 +224,7 @@ def _resolve_object_bnode_quantity_value(
     if lower_bound:
         data["lowerBound"] = f"+{lower_bound}"
     if unit:
-        data["unit"] = str(unit)
+        data["unit"] = "1" if unit == WD.Q199 else str(unit)
     assert data["amount"] != "", "missing amount value"
     return {"type": "quantity", "value": data}
 
@@ -534,20 +534,9 @@ def _datavalue_equals(
         else:
             return False
     elif a["type"] == "quantity" and b["type"] == "quantity":
-        a_unitless = (
-            a["value"].get("unit") == "1"
-            or a["value"].get("unit") == "https://www.wikidata.org/wiki/Q199"
-        )
-        b_unitless = (
-            b["value"].get("unit") == "1"
-            or b["value"].get("unit") == "https://www.wikidata.org/wiki/Q199"
-        )
-        if (
-            "upperBound" in a["value"]
-            and "upperBound" not in b["value"]
-            or a_unitless
-            and b_unitless
-        ):
+        if a["value"].get("unit") != b["value"].get("unit"):
+            return False
+        if "upperBound" in a["value"] and "upperBound" not in b["value"]:
             return a["value"]["amount"] == b["value"]["amount"]
         else:
             return a == b

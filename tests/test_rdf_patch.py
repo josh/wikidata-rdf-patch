@@ -9,15 +9,19 @@ from wikidata_rdf_patch.rdf_patch import (
     PR,
     PRV,
     RDF,
+    WD,
     WDT,
     WIKIBASE,
     PropertyDatatypes,
+    _datavalue_equals,
     _prefetch_property_datatypes,
+    _resolve_object_bnode_quantity_value,
     _resolve_object_bnode_reference,
     _resolve_statement_qualifiers,
     _resolve_statement_qualifiers_order,
     process_graph,
 )
+from wikidata_rdf_patch.wikidata_typing import QuantityDataValue
 
 actions_logging.setup()
 
@@ -99,6 +103,69 @@ def test_prefetch_property_datatypes_batches_51_properties() -> None:
 
     assert len(datatypes) == 51
     assert datatypes.keys() == {f"P{number}" for number in property_numbers}
+
+
+def test_resolve_unitless_quantity_value() -> None:
+    graph = Graph()
+    quantity = BNode()
+    graph.add((quantity, WIKIBASE.quantityAmount, Literal(1, datatype=XSD.decimal)))
+    graph.add((quantity, WIKIBASE.quantityUnit, WD.Q199))
+
+    value = _resolve_object_bnode_quantity_value(graph, quantity)
+
+    assert value["value"]["unit"] == "1"
+
+
+def test_quantity_equality_requires_matching_units() -> None:
+    bounded: QuantityDataValue = {
+        "type": "quantity",
+        "value": {
+            "amount": "+1",
+            "unit": "http://www.wikidata.org/entity/Q11573",
+            "lowerBound": "+0",
+            "upperBound": "+2",
+        },
+    }
+    different_unit: QuantityDataValue = {
+        "type": "quantity",
+        "value": {
+            "amount": "+1",
+            "unit": "http://www.wikidata.org/entity/Q174728",
+        },
+    }
+    same_unit_without_bounds: QuantityDataValue = {
+        "type": "quantity",
+        "value": {
+            "amount": "+1",
+            "unit": "http://www.wikidata.org/entity/Q11573",
+        },
+    }
+
+    assert not _datavalue_equals(bounded, different_unit)
+    assert _datavalue_equals(bounded, same_unit_without_bounds)
+
+
+def test_quantity_equality_respects_explicit_bounds() -> None:
+    first: QuantityDataValue = {
+        "type": "quantity",
+        "value": {
+            "amount": "+1",
+            "unit": "1",
+            "lowerBound": "+0",
+            "upperBound": "+2",
+        },
+    }
+    second: QuantityDataValue = {
+        "type": "quantity",
+        "value": {
+            "amount": "+1",
+            "unit": "1",
+            "lowerBound": "-1",
+            "upperBound": "+3",
+        },
+    }
+
+    assert not _datavalue_equals(first, second)
 
 
 def test_item_wdt_add_monolingualtext() -> None:
@@ -686,10 +753,7 @@ def test_statement_psv_change() -> None:
     assert claim["mainsnak"]["property"] == "P1106"
     assert claim["mainsnak"]["datavalue"]["type"] == "quantity"
     assert claim["mainsnak"]["datavalue"]["value"]["amount"] == "+456"
-    assert (
-        claim["mainsnak"]["datavalue"]["value"]["unit"]
-        == "http://www.wikidata.org/entity/Q199"
-    )
+    assert claim["mainsnak"]["datavalue"]["value"]["unit"] == "1"
     assert claim["mainsnak"]["datavalue"]["value"]["upperBound"] == "+466"
     assert claim["mainsnak"]["datavalue"]["value"]["lowerBound"] == "+446"
 
@@ -701,7 +765,7 @@ def test_statement_psv_noop() -> None:
         wikibase:quantityAmount "+123"^^xsd:decimal ;
         wikibase:quantityUpperBound "+133"^^xsd:decimal ;
         wikibase:quantityLowerBound "+113"^^xsd:decimal ;
-        wikibase:quantityUnit <https://www.wikidata.org/wiki/Q199>
+        wikibase:quantityUnit <http://www.wikidata.org/entity/Q199>
       ].
     """
     edits = list(process_graph(StringIO(triples)))
