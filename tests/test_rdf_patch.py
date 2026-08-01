@@ -408,6 +408,24 @@ def test_prefetch_ignores_unbound_qid_and_pid_paths() -> None:
     assert _prefetch_property_datatypes(graph, "test-agent") == {}
 
 
+def test_full_time_value_uses_entity_iri_for_default_calendar() -> None:
+    graph = Graph()
+    time = BNode()
+    graph.add(
+        (
+            time,
+            WIKIBASE.timeValue,
+            Literal("2000-01-01T00:00:00Z", datatype=XSD.dateTime),
+        )
+    )
+
+    value = _resolve_object_bnode_time_value(graph, time)
+
+    assert value["value"]["calendarmodel"] == (
+        "http://www.wikidata.org/entity/Q1985727"
+    )
+
+
 def test_item_wdt_add_monolingualtext() -> None:
     triples = """
         wd:Q115569934 wdt:P1450 "hello"@en.
