@@ -1,9 +1,85 @@
 from io import StringIO
 
+from rdflib import XSD, BNode, Graph, Literal
+
 from wikidata_rdf_patch import actions_logging
-from wikidata_rdf_patch.rdf_patch import process_graph
+from wikidata_rdf_patch.rdf_patch import (
+    PQ,
+    PQV,
+    PR,
+    PRV,
+    RDF,
+    WIKIBASE,
+    PropertyDatatypes,
+    _resolve_object_bnode_reference,
+    _resolve_statement_qualifiers,
+    _resolve_statement_qualifiers_order,
+    process_graph,
+)
 
 actions_logging.setup()
+
+
+def _add_full_time_value(graph: Graph, time: BNode) -> None:
+    graph.add((time, RDF.type, WIKIBASE.TimeValue))
+    graph.add(
+        (
+            time,
+            WIKIBASE.timeValue,
+            Literal("1991-11-25T00:00:00Z", datatype=XSD.dateTime),
+        )
+    )
+    graph.add((time, WIKIBASE.timePrecision, Literal(9, datatype=XSD.integer)))
+
+
+def test_full_qualifier_value_replaces_simple_value() -> None:
+    graph = Graph()
+    statement = BNode()
+    full_time = BNode()
+    graph.add(
+        (
+            statement,
+            PQ.P585,
+            Literal("1991-11-25T00:00:00Z", datatype=XSD.dateTime),
+        )
+    )
+    graph.add((statement, PQV.P585, full_time))
+    _add_full_time_value(graph, full_time)
+    datatypes: PropertyDatatypes = {"P585": "time"}
+
+    qualifiers = _resolve_statement_qualifiers(graph, datatypes, statement, "P585")
+
+    assert _resolve_statement_qualifiers_order(graph, statement) == ["P585"]
+    assert len(qualifiers) == 1
+    qualifier = qualifiers[0]
+    assert qualifier["snaktype"] == "value"
+    assert qualifier["datavalue"]["type"] == "time"
+    assert qualifier["datavalue"]["value"]["precision"] == 9
+
+
+def test_full_reference_value_replaces_simple_value() -> None:
+    graph = Graph()
+    reference_node = BNode()
+    full_time = BNode()
+    graph.add(
+        (
+            reference_node,
+            PR.P813,
+            Literal("1991-11-25T00:00:00Z", datatype=XSD.dateTime),
+        )
+    )
+    graph.add((reference_node, PRV.P813, full_time))
+    _add_full_time_value(graph, full_time)
+    datatypes: PropertyDatatypes = {"P813": "time"}
+
+    reference = _resolve_object_bnode_reference(graph, datatypes, reference_node)
+
+    assert reference["snaks-order"] == ["P813"]
+    assert len(reference["snaks"]["P813"]) == 1
+    snak = reference["snaks"]["P813"][0]
+    assert snak["snaktype"] == "value"
+    assert snak["datavalue"]["type"] == "time"
+    assert snak["datavalue"]["value"]["precision"] == 9
 
 
 def test_item_wdt_add_monolingualtext() -> None:

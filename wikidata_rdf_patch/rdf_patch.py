@@ -354,12 +354,10 @@ def _resolve_object_bnode_reference(
         if pid not in snaks:
             snaks[pid] = []
 
-        for pr_object in graph_objects(graph, object, PR[pid]):
-            snak = _resolve_snak(graph, property_datatypes, pid, pr_object)
-            snaks[pid].append(snak)
-
-        for prv_object in graph_objects(graph, object, PRV[pid]):
-            snak = _resolve_snak(graph, property_datatypes, pid, prv_object)
+        full_objects = list(graph_objects(graph, object, PRV[pid]))
+        reference_objects = full_objects or list(graph_objects(graph, object, PR[pid]))
+        for reference_object in reference_objects:
+            snak = _resolve_snak(graph, property_datatypes, pid, reference_object)
             snaks[pid].append(snak)
 
     assert len(snaks) > 0
@@ -428,7 +426,7 @@ def _resolve_statement_qualifiers_order(
     order: list[str] = []
     for predicate in graph_predicates(graph, subject):
         predicate_prefix, predicate_local_name = _compute_qname(predicate)
-        if predicate_prefix.startswith("pq"):
+        if predicate_prefix.startswith("pq") and predicate_local_name not in order:
             order.append(predicate_local_name)
     return order
 
@@ -442,12 +440,10 @@ def _resolve_statement_qualifiers(
     assert pid.startswith("P"), pid
     qualifiers: list[wikidata_typing.Snak] = []
 
-    for pqv_object in graph_objects(graph, subject, PQ[pid]):
-        snak = _resolve_snak(graph, property_datatypes, pid, pqv_object)
-        qualifiers.append(snak)
-
-    for pqv_object in graph_objects(graph, subject, PQV[pid]):
-        snak = _resolve_snak(graph, property_datatypes, pid, pqv_object)
+    full_objects = list(graph_objects(graph, subject, PQV[pid]))
+    qualifier_objects = full_objects or list(graph_objects(graph, subject, PQ[pid]))
+    for qualifier_object in qualifier_objects:
+        snak = _resolve_snak(graph, property_datatypes, pid, qualifier_object)
         qualifiers.append(snak)
 
     if pqve_object := graph_value(graph, subject, PQE[pid]):
@@ -818,6 +814,10 @@ def _update_statement(
 
         if predicate_prefix == "pq" or predicate_prefix == "pqv":
             pid = _pid(predicate_local_name)
+            if predicate_prefix == "pq" and any(
+                graph_objects(graph, statement_subject, PQV[pid])
+            ):
+                continue
             snak = _resolve_snak(graph, property_datatypes, pid, object)
             qualifiers = _statement_property_qualifiers(statement, pid)
             if not _any_snak_equals(qualifiers, snak):
