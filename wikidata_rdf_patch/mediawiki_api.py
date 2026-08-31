@@ -26,15 +26,56 @@ DEFAULT_MAXLAG: int = 5
 DEFAULT_RETRIES: int = 15
 DEFAULT_RETRY_AFTER: float = 120.0
 
+_MAX_RETRY_AFTER: float = 600.0
+
 
 class Error(Exception):
     code: str
     info: str
+    lag: float | None
+    retry_after: float | None
 
-    def __init__(self, code: str, info: str):
+    def __init__(
+        self,
+        code: str,
+        info: str,
+        lag: float | None = None,
+        retry_after: float | None = None,
+    ):
         self.code = code
         self.info = info
+        self.lag = lag
+        self.retry_after = retry_after
         super().__init__(f"[{code}] {info}")
+
+
+def _retry_after_seconds(value: str | None) -> float | None:
+    if not value:
+        return None
+    try:
+        return float(value.strip())
+    except ValueError:
+        return None
+
+
+def _sleep_for_retry(error: Exception, retry_after: float) -> bool:
+    server_retry_after: float | None = None
+    if isinstance(error, urllib.error.HTTPError):
+        if error.code not in (429, 503):
+            return False
+        server_retry_after = _retry_after_seconds(error.headers.get("Retry-After"))
+    elif isinstance(error, Error):
+        if error.code != "maxlag":
+            return False
+        server_retry_after = error.retry_after
+    else:
+        return False
+
+    # Retry-After is a minimum; MediaWiki always sends 5 for maxlag.
+    wait = min(max(retry_after, server_retry_after or 0.0), _MAX_RETRY_AFTER)
+    logger.warning("%s; waiting %.1f seconds", error, wait)
+    time.sleep(wait)
+    return True
 
 
 # https://www.wikidata.org/w/api.php?action=help
@@ -66,6 +107,7 @@ def _request(
         data = response.read()
         assert isinstance(data, bytes)
         cookies.extract_cookies(response, req)
+        retry_after = _retry_after_seconds(response.headers.get("Retry-After"))
     api_data: dict[str, Any] = json.loads(data)
 
     if api_error := api_data.get("error"):
@@ -73,7 +115,12 @@ def _request(
             logger.error("[%s] %s", action, api_data["error"]["info"])
         for message in api_data["error"].get("messages", []):
             logger.error("[%s] %s", action, message["name"])
-        raise Error(code=api_error["code"], info=api_error["info"])
+        raise Error(
+            code=api_error["code"],
+            info=api_error["info"],
+            lag=api_error.get("lag"),
+            retry_after=retry_after,
+        )
 
     warnings = api_data.get("warnings", {}).get(action, {})
     for warning in warnings.values():
@@ -162,6 +209,7 @@ def login(
     user_agent: str = DEFAULT_USER_AGENT,
     maxlag: int = DEFAULT_MAXLAG,
     retries: int = DEFAULT_RETRIES,
+    retry_after: float = DEFAULT_RETRY_AFTER,
 ) -> Session:
     session = Session(
         cookies=http.cookiejar.CookieJar(),
@@ -178,14 +226,13 @@ def login(
             retries -= 1
             _login(session=session)
             return session
-        except Error as e:
-            # https://www.mediawiki.org/wiki/Manual:Maxlag_parameter
-            if e.code == "maxlag" and retries > 0:
-                logger.warning("Waiting for %.1f seconds", 5)
-                time.sleep(5)
+        # https://www.mediawiki.org/wiki/Manual:Maxlag_parameter
+        except (urllib.error.HTTPError, Error) as e:
+            if retries > 0 and _sleep_for_retry(e, retry_after):
                 continue
-            else:
-                raise
+            if retries == 0:
+                raise RetriesExhaustedError("out of retries") from e
+            raise
 
     raise RetriesExhaustedError("out of retries")
 
@@ -272,26 +319,18 @@ def wbeditentity(
                 continue
 
         except urllib.error.HTTPError as e:
-            if e.code == 503 and retries > 0:
-                wait_time = 60.0
-                logger.warning(
-                    "Service unavailable (503). Waiting for %.1f seconds", wait_time
-                )
-                time.sleep(wait_time)
+            if retries > 0 and _sleep_for_retry(e, retry_after):
                 continue
             raise
+        # https://www.mediawiki.org/wiki/Manual:Maxlag_parameter
         except Error as e:
-            # https://www.mediawiki.org/wiki/Manual:Maxlag_parameter
-            if e.code == "maxlag" and retries > 0:
-                logger.warning("Waiting for %.1f seconds", retry_after)
-                time.sleep(retry_after)
-                continue
-            elif e.code == "assertbotfailed" and retries > 0:
+            if e.code == "assertbotfailed" and retries > 0:
                 logger.warning("session expired, logging in again")
                 _login(session=session)
                 continue
-            else:
-                raise
+            if retries > 0 and _sleep_for_retry(e, retry_after):
+                continue
+            raise
 
     raise RetriesExhaustedError("out of retries")
 

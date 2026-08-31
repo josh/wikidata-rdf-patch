@@ -1,4 +1,5 @@
 import os
+import time
 
 import pytest
 
@@ -8,6 +9,19 @@ actions_logging.setup()
 
 WIKIDATA_USERNAME = os.environ.get("WIKIDATA_USERNAME", "")
 WIKIDATA_PASSWORD = os.environ.get("WIKIDATA_PASSWORD", "")
+
+
+def test_login_retries_and_gives_up_on_maxlag() -> None:
+    start = time.monotonic()
+    with pytest.raises(mediawiki_api.RetriesExhaustedError):
+        _ = mediawiki_api.login(
+            username="",
+            password="",
+            maxlag=-1,
+            retries=3,
+            retry_after=0.1,
+        )
+    assert time.monotonic() - start >= 0.2
 
 
 @pytest.mark.skipif(WIKIDATA_USERNAME == "", reason="Missing WIKIDATA_USERNAME")
