@@ -4,7 +4,7 @@ requires = [ "setuptools>=61" ]
 
 [project]
 name = "wikidata-rdf-patch"
-version = "1.0.3"
+version = "1.0.4"
 description = "Edit Wikidata items with RDF"
 readme = "README.md"
 license = "MIT"
