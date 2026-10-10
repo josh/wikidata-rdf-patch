@@ -355,7 +355,7 @@ requires-dist = [
 dev = [
     { name = "build", specifier = ">=1,<2" },
     { name = "mypy", specifier = ">=1.18.1,<2" },
-    { name = "pytest", specifier = ">=8,<10" },
+    { name = "pytest", specifier = ">=9.0.3,<10" },
     { name = "ruff", specifier = ">=0.13,<2" },
     { name = "types-tqdm", specifier = ">=4.65,<5" },
 ]
