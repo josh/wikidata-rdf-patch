@@ -348,7 +348,7 @@ dev = [
 requires-dist = [
     { name = "click", specifier = ">=8.2,<9" },
     { name = "rdflib", specifier = ">=7,<8" },
-    { name = "tqdm", specifier = ">=4.65,<5" },
+    { name = "tqdm", specifier = ">=4.66.3,<5" },
 ]
 
 [package.metadata.requires-dev]
