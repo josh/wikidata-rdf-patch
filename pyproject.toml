@@ -29,9 +29,9 @@ scripts.wikidata-rdf-patch = "wikidata_rdf_patch.cli:main"
 [dependency-groups]
 dev = [
     "build>=1,<2",
-    "mypy>=1.18.1,<2",
     "pytest>=9.0.3,<10",
     "ruff>=0.13,<2",
+    "ty>=0.0.91,<0.1",
     "types-tqdm>=4.65,<5",
 ]
 
@@ -40,6 +40,3 @@ lint.extend-select = [ "I", "UP" ]
 
 [tool.pyproject-fmt]
 indent = 4
-
-[tool.mypy]
-strict = true
