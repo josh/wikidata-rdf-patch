@@ -30,9 +30,12 @@ scripts.wikidata-rdf-patch = "wikidata_rdf_patch.cli:main"
 dev = [
     "build>=1,<2",
     "pytest>=9.0.3,<10",
-    "ruff>=0.13,<2",
     "ty>=0.0.91,<0.1",
     "types-tqdm>=4.65,<5",
+    { include-group = "lint" },
+]
+lint = [
+    "ruff>=0.13,<2",
 ]
 
 [tool.ruff]

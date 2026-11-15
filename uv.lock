@@ -209,6 +209,9 @@ dev = [
     { name = "ty" },
     { name = "types-tqdm" },
 ]
+lint = [
+    { name = "ruff" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -225,3 +228,4 @@ dev = [
     { name = "ty", specifier = ">=0.0.91,<0.1" },
     { name = "types-tqdm", specifier = ">=4.65,<5" },
 ]
+lint = [{ name = "ruff", specifier = ">=0.13,<2" }]
