@@ -72,7 +72,9 @@ def test_dry_run_previews_every_item_and_claim(
     original_level = root_logger.level
     try:
         root_logger.setLevel(logging.WARNING)
-        result = CliRunner().invoke(main, ["--dry-run"], input=triples)
+        result = CliRunner().invoke(
+            main, ["--dry-run"], input=triples, catch_exceptions=False
+        )
     finally:
         root_logger.setLevel(original_level)
 
