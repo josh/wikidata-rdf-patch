@@ -114,6 +114,12 @@ def _blocklist_title(value: str) -> str:
     default=10,
     help="Minimum time between edits in seconds",
 )
+@click.option(
+    "--deadline",
+    type=float,
+    default=float("inf"),
+    help="Stop cleanly after retrying replication lag for this many seconds",
+)
 @click.option("--verbose", "-v", is_flag=True)
 @click.version_option()
 def main(
@@ -124,6 +130,7 @@ def main(
     blocklist_url: str,
     user_agent: str,
     min_time_between_edits: int,
+    deadline: float,
     verbose: bool,
 ) -> None:
     log_level = logging.DEBUG if verbose else logging.INFO
@@ -131,14 +138,20 @@ def main(
     logging.getLogger().setLevel(log_level)
 
     blocklist_title = _blocklist_title(blocklist_url)
+    deadline += time.monotonic()
 
     session: mediawiki_api.Session | None = None
     if not dry_run:
-        session = mediawiki_api.login(
-            username=username,
-            password=password,
-            user_agent=user_agent,
-        )
+        try:
+            session = mediawiki_api.login(
+                username=username,
+                password=password,
+                user_agent=user_agent,
+                deadline=deadline,
+            )
+        except mediawiki_api.RetriesExhaustedError as e:
+            logger.warning("Stopping before login: %s", e)
+            return
 
     blocked_qids: set[str] = set()
     if blocklist_title:
@@ -173,13 +186,18 @@ def main(
                 logger.debug("Waiting for %.1f seconds", wait_time)
                 time.sleep(wait_time)
 
-            mediawiki_api.wbeditentity(
-                session=session,
-                qid=qid,
-                baserevid=lastrevid,
-                edit_data={"claims": claims},
-                summary=summary,
-            )
+            try:
+                mediawiki_api.wbeditentity(
+                    session=session,
+                    qid=qid,
+                    baserevid=lastrevid,
+                    edit_data={"claims": claims},
+                    summary=summary,
+                    deadline=deadline,
+                )
+            except mediawiki_api.RetriesExhaustedError as e:
+                logger.warning("Stopping at %i/%i edits: %s", pbar.n, pbar.total, e)
+                return
             last_edit = time.time()
 
         if session is not None:
