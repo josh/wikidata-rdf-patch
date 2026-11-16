@@ -24,9 +24,9 @@ DEFAULT_USER_AGENT = (
 
 DEFAULT_MAXLAG: int = 5
 DEFAULT_RETRIES: int = 15
-DEFAULT_RETRY_AFTER: float = 120.0
+DEFAULT_RETRY_AFTER: float = 30.0
 
-_MAX_RETRY_AFTER: float = 600.0
+_MAX_RETRY_AFTER: float = 300.0
 
 
 class Error(Exception):
@@ -58,7 +58,7 @@ def _retry_after_seconds(value: str | None) -> float | None:
         return None
 
 
-def _sleep_for_retry(error: Exception, retry_after: float) -> bool:
+def _sleep_for_retry(error: Exception, retry_after: float, deadline: float) -> bool:
     server_retry_after: float | None = None
     if isinstance(error, urllib.error.HTTPError):
         if error.code not in (429, 503):
@@ -73,6 +73,8 @@ def _sleep_for_retry(error: Exception, retry_after: float) -> bool:
 
     # Retry-After is a minimum; MediaWiki always sends 5 for maxlag.
     wait = min(max(retry_after, server_retry_after or 0.0), _MAX_RETRY_AFTER)
+    if time.monotonic() + wait > deadline:
+        raise RetriesExhaustedError("deadline reached") from error
     logger.warning("%s; waiting %.1f seconds", error, wait)
     time.sleep(wait)
     return True
@@ -210,6 +212,7 @@ def login(
     maxlag: int = DEFAULT_MAXLAG,
     retries: int = DEFAULT_RETRIES,
     retry_after: float = DEFAULT_RETRY_AFTER,
+    deadline: float = float("inf"),
 ) -> Session:
     session = Session(
         cookies=http.cookiejar.CookieJar(),
@@ -228,7 +231,8 @@ def login(
             return session
         # https://www.mediawiki.org/wiki/Manual:Maxlag_parameter
         except (urllib.error.HTTPError, Error) as e:
-            if retries > 0 and _sleep_for_retry(e, retry_after):
+            if retries > 0 and _sleep_for_retry(e, retry_after, deadline):
+                retry_after *= 2
                 continue
             if retries == 0:
                 raise RetriesExhaustedError("out of retries") from e
@@ -285,6 +289,7 @@ def wbeditentity(
     summary: str | None = None,
     retries: int = DEFAULT_RETRIES,
     retry_after: float = DEFAULT_RETRY_AFTER,
+    deadline: float = float("inf"),
 ) -> None:
     assert qid.startswith("Q"), "QID must start with Q"
 
@@ -319,7 +324,8 @@ def wbeditentity(
                 continue
 
         except urllib.error.HTTPError as e:
-            if retries > 0 and _sleep_for_retry(e, retry_after):
+            if retries > 0 and _sleep_for_retry(e, retry_after, deadline):
+                retry_after *= 2
                 continue
             raise
         # https://www.mediawiki.org/wiki/Manual:Maxlag_parameter
@@ -328,7 +334,8 @@ def wbeditentity(
                 logger.warning("session expired, logging in again")
                 _login(session=session)
                 continue
-            if retries > 0 and _sleep_for_retry(e, retry_after):
+            if retries > 0 and _sleep_for_retry(e, retry_after, deadline):
+                retry_after *= 2
                 continue
             raise
 

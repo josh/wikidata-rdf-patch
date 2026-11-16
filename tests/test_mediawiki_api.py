@@ -24,6 +24,13 @@ def test_login_retries_and_gives_up_on_maxlag() -> None:
     assert time.monotonic() - start >= 0.2
 
 
+def test_login_stops_at_deadline() -> None:
+    start = time.monotonic()
+    with pytest.raises(mediawiki_api.RetriesExhaustedError, match="deadline"):
+        _ = mediawiki_api.login(username="", password="", maxlag=-1, deadline=start + 1)
+    assert time.monotonic() - start < 5
+
+
 @pytest.mark.skipif(WIKIDATA_USERNAME == "", reason="Missing WIKIDATA_USERNAME")
 @pytest.mark.skipif(WIKIDATA_PASSWORD == "", reason="Missing WIKIDATA_PASSWORD")
 def test_login() -> None:
