@@ -115,6 +115,13 @@ def _blocklist_title(value: str) -> str:
     help="Minimum time between edits in seconds",
 )
 @click.option(
+    "--maxlag",
+    envvar="WIKIDATA_MAXLAG",
+    type=int,
+    default=mediawiki_api.DEFAULT_MAXLAG,
+    help="Wait on edits while replication lag exceeds this many seconds",
+)
+@click.option(
     "--deadline",
     type=float,
     default=float("inf"),
@@ -130,6 +137,7 @@ def main(
     blocklist_url: str,
     user_agent: str,
     min_time_between_edits: int,
+    maxlag: int,
     deadline: float,
     verbose: bool,
 ) -> None:
@@ -147,6 +155,7 @@ def main(
                 username=username,
                 password=password,
                 user_agent=user_agent,
+                maxlag=maxlag,
                 deadline=deadline,
             )
         except mediawiki_api.RetriesExhaustedError as e:

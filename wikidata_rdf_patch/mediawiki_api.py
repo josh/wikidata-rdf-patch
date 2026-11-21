@@ -87,7 +87,7 @@ def _request(
     params: dict[str, str],
     cookies: http.cookiejar.CookieJar,
     user_agent: str,
-    maxlag: int,
+    maxlag: int | None = None,
 ) -> dict[str, Any]:
     logger.debug("mediawiki-api: %s", action)
     url = "https://www.wikidata.org/w/api.php"
@@ -96,7 +96,8 @@ def _request(
     }
     params["action"] = action
     params["format"] = "json"
-    params["maxlag"] = str(maxlag)
+    if maxlag is not None:
+        params["maxlag"] = str(maxlag)
     encoded_params = urllib.parse.urlencode(params)
     post_data: bytes | None = None
     if method == "GET":
@@ -136,7 +137,6 @@ def _token(
     type: Literal["login", "csrf"],
     cookies: http.cookiejar.CookieJar,
     user_agent: str,
-    maxlag: int,
 ) -> str:
     params = {"meta": "tokens", "type": type}
     resp = _request(
@@ -145,7 +145,6 @@ def _token(
         params=params,
         cookies=cookies,
         user_agent=user_agent,
-        maxlag=maxlag,
     )
     token = resp["query"]["tokens"][f"{type}token"]
     assert isinstance(token, str)
@@ -177,7 +176,6 @@ def _login(session: Session) -> None:
         type="login",
         cookies=session.cookies,
         user_agent=session.user_agent,
-        maxlag=session.maxlag,
     )
     params = {
         "lgname": session.username,
@@ -198,7 +196,6 @@ def _login(session: Session) -> None:
             type="csrf",
             cookies=session.cookies,
             user_agent=session.user_agent,
-            maxlag=session.maxlag,
         )
     else:
         raise LoginError(resp["login"]["reason"])
@@ -257,7 +254,6 @@ def logout(session: Session) -> None:
 def wbgetentities(
     ids: list[str],
     user_agent: str,
-    maxlag: int = DEFAULT_MAXLAG,
 ) -> dict[str, Entity]:
     assert len(ids) > 0, "must specify at least one ID"
     assert len(ids) <= 50, "must specify at most 50 IDs"
@@ -267,7 +263,6 @@ def wbgetentities(
         params={"ids": "|".join(ids)},
         cookies=http.cookiejar.CookieJar(),
         user_agent=user_agent,
-        maxlag=maxlag,
     )
     assert resp.get("success") == 1, "wbgetentities failed"
     entities: dict[str, Entity] = resp["entities"]
@@ -358,7 +353,6 @@ def fetch_page_qids(title: str, user_agent: str) -> set[str]:
         params=params,
         cookies=http.cookiejar.CookieJar(),
         user_agent=user_agent,
-        maxlag=DEFAULT_MAXLAG,
     )
 
     pages = data["query"]["pages"]
