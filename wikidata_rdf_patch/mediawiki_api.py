@@ -227,6 +227,34 @@ def _login(session: Session) -> None:
         raise LoginError(resp["login"]["reason"])
 
 
+def _login_with_retries(
+    session: Session,
+    retries: int,
+    retry_after: float,
+    deadline: float,
+) -> None:
+    while retries > 0:
+        try:
+            retries -= 1
+            _login(session=session)
+            return
+        except urllib.error.HTTPError as e:
+            if retries > 0 and _sleep_for_retry(e, retry_after, deadline):
+                retry_after *= 2
+                continue
+            raise
+        # https://www.mediawiki.org/wiki/Manual:Maxlag_parameter
+        except Error as e:
+            if retries > 0 and _sleep_for_retry(e, retry_after, deadline):
+                retry_after *= 2
+                continue
+            if retries == 0 and e.code == "maxlag":
+                raise RetriesExhaustedError("out of retries") from e
+            raise
+
+    raise RetriesExhaustedError("out of retries")
+
+
 # https://www.wikidata.org/w/api.php?action=help&modules=login
 def login(
     username: str,
@@ -246,27 +274,13 @@ def login(
         user_agent=user_agent,
         maxlag=maxlag,
     )
-
-    while retries > 0:
-        try:
-            retries -= 1
-            _login(session=session)
-            return session
-        except urllib.error.HTTPError as e:
-            if retries > 0 and _sleep_for_retry(e, retry_after, deadline):
-                retry_after *= 2
-                continue
-            raise
-        # https://www.mediawiki.org/wiki/Manual:Maxlag_parameter
-        except Error as e:
-            if retries > 0 and _sleep_for_retry(e, retry_after, deadline):
-                retry_after *= 2
-                continue
-            if retries == 0 and e.code == "maxlag":
-                raise RetriesExhaustedError("out of retries") from e
-            raise
-
-    raise RetriesExhaustedError("out of retries")
+    _login_with_retries(
+        session=session,
+        retries=retries,
+        retry_after=retry_after,
+        deadline=deadline,
+    )
+    return session
 
 
 # https://www.wikidata.org/w/api.php?action=help&modules=logout
@@ -357,7 +371,12 @@ def wbeditentity(
         except Error as e:
             if e.code == "assertbotfailed" and retries > 0:
                 logger.warning("session expired, logging in again")
-                _login(session=session)
+                _login_with_retries(
+                    session=session,
+                    retries=retries,
+                    retry_after=retry_after,
+                    deadline=deadline,
+                )
                 continue
             if retries > 0 and _sleep_for_retry(e, retry_after, deadline):
                 retry_after *= 2
