@@ -767,7 +767,7 @@ def _detect_changed_claims(
 
 
 def _prefetch_items(
-    graph: Graph, user_agent: str
+    graph: Graph, user_agent: str, deadline: float = float("inf")
 ) -> tuple[dict[str, wikidata_typing.Item], set[str]]:
     qids: set[str] = set()
 
@@ -789,6 +789,7 @@ def _prefetch_items(
         entities = mediawiki_api.wbgetentities(
             ids=list(qid_batch),
             user_agent=user_agent,
+            deadline=deadline,
         )
         for qid, entity in entities.items():
             if "missing" in entity:
@@ -802,7 +803,9 @@ def _prefetch_items(
     return items, missing_items
 
 
-def _prefetch_property_datatypes(graph: Graph, user_agent: str) -> PropertyDatatypes:
+def _prefetch_property_datatypes(
+    graph: Graph, user_agent: str, deadline: float = float("inf")
+) -> PropertyDatatypes:
     pids: set[str] = set()
     property_prefixes = {
         "p",
@@ -831,6 +834,7 @@ def _prefetch_property_datatypes(graph: Graph, user_agent: str) -> PropertyDatat
         entities = mediawiki_api.wbgetentities(
             ids=list(pid_batch),
             user_agent=user_agent,
+            deadline=deadline,
         )
         for pid, entity in entities.items():
             assert entity["type"] == "property"
@@ -970,6 +974,7 @@ def process_graph(
     input: TextIO,
     blocked_qids: set[str] | None = None,
     user_agent: str = mediawiki_api.DEFAULT_USER_AGENT,
+    deadline: float = float("inf"),
 ) -> Iterator[tuple[str, int, list[wikidata_typing.Statement], str | None]]:
     if blocked_qids is None:
         blocked_qids = set()
@@ -978,8 +983,8 @@ def process_graph(
     data = PREFIXES + input.read()
     graph.parse(data=data)
 
-    property_datatypes = _prefetch_property_datatypes(graph, user_agent)
-    items, missing_items = _prefetch_items(graph, user_agent)
+    property_datatypes = _prefetch_property_datatypes(graph, user_agent, deadline)
+    items, missing_items = _prefetch_items(graph, user_agent, deadline)
     original_items = deepcopy(items)
 
     edit_summaries: dict[str, set[str]] = defaultdict(lambda: set())

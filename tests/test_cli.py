@@ -84,3 +84,4 @@ def test_dry_run_previews_every_item_and_claim(
     assert "Edit Q115569934" in messages
     assert sum(message.startswith(" ⮑ P370 / ") for message in messages) == 2
     assert sum(message.startswith(" ⮑ P2536 / ") for message in messages) == 1
+    assert "Finished with 0 statements published, 0 errored, 3 skipped" in messages

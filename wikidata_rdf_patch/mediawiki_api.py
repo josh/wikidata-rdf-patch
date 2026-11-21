@@ -27,6 +27,7 @@ DEFAULT_RETRIES: int = 15
 DEFAULT_RETRY_AFTER: float = 30.0
 
 _MAX_RETRY_AFTER: float = 300.0
+_TIMEOUT: float = 60.0
 
 
 class Error(Exception):
@@ -56,6 +57,10 @@ def _retry_after_seconds(value: str | None) -> float | None:
         return float(value.strip())
     except ValueError:
         return None
+
+
+class RetriesExhaustedError(Exception):
+    pass
 
 
 def _sleep_for_retry(error: Exception, retry_after: float, deadline: float) -> bool:
@@ -106,7 +111,7 @@ def _request(
         post_data = encoded_params.encode("utf-8")
     req = urllib.request.Request(url, data=post_data, headers=headers, method=method)
     cookies.add_cookie_header(req)
-    with urllib.request.urlopen(req) as response:
+    with urllib.request.urlopen(req, timeout=_TIMEOUT) as response:
         data = response.read()
         assert isinstance(data, bytes)
         cookies.extract_cookies(response, req)
@@ -132,7 +137,12 @@ def _request(
     return api_data
 
 
-def _get(action: str, params: dict[str, str], user_agent: str) -> dict[str, Any]:
+def _get(
+    action: str,
+    params: dict[str, str],
+    user_agent: str,
+    deadline: float = float("inf"),
+) -> dict[str, Any]:
     retries = DEFAULT_RETRIES
     retry_after = DEFAULT_RETRY_AFTER
     while True:
@@ -146,7 +156,7 @@ def _get(action: str, params: dict[str, str], user_agent: str) -> dict[str, Any]
                 user_agent=user_agent,
             )
         except urllib.error.HTTPError as e:
-            if retries > 0 and _sleep_for_retry(e, retry_after, float("inf")):
+            if retries > 0 and _sleep_for_retry(e, retry_after, deadline):
                 retry_after *= 2
                 continue
             raise
@@ -183,10 +193,6 @@ class Session:
 
 
 class LoginError(Exception):
-    pass
-
-
-class RetriesExhaustedError(Exception):
     pass
 
 
@@ -246,12 +252,17 @@ def login(
             retries -= 1
             _login(session=session)
             return session
-        # https://www.mediawiki.org/wiki/Manual:Maxlag_parameter
-        except (urllib.error.HTTPError, Error) as e:
+        except urllib.error.HTTPError as e:
             if retries > 0 and _sleep_for_retry(e, retry_after, deadline):
                 retry_after *= 2
                 continue
-            if retries == 0:
+            raise
+        # https://www.mediawiki.org/wiki/Manual:Maxlag_parameter
+        except Error as e:
+            if retries > 0 and _sleep_for_retry(e, retry_after, deadline):
+                retry_after *= 2
+                continue
+            if retries == 0 and e.code == "maxlag":
                 raise RetriesExhaustedError("out of retries") from e
             raise
 
@@ -273,6 +284,7 @@ def logout(session: Session) -> None:
 def wbgetentities(
     ids: list[str],
     user_agent: str,
+    deadline: float = float("inf"),
 ) -> dict[str, Entity]:
     assert len(ids) > 0, "must specify at least one ID"
     assert len(ids) <= 50, "must specify at most 50 IDs"
@@ -280,6 +292,7 @@ def wbgetentities(
         action="wbgetentities",
         params={"ids": "|".join(ids)},
         user_agent=user_agent,
+        deadline=deadline,
     )
     assert resp.get("success") == 1, "wbgetentities failed"
     entities: dict[str, Entity] = resp["entities"]
@@ -349,12 +362,18 @@ def wbeditentity(
             if retries > 0 and _sleep_for_retry(e, retry_after, deadline):
                 retry_after *= 2
                 continue
+            if retries == 0 and e.code == "maxlag":
+                raise RetriesExhaustedError("out of retries") from e
             raise
 
     raise RetriesExhaustedError("out of retries")
 
 
-def fetch_page_qids(title: str, user_agent: str) -> set[str]:
+def fetch_page_qids(
+    title: str,
+    user_agent: str,
+    deadline: float = float("inf"),
+) -> set[str]:
     if not title:
         return set()
 
@@ -364,7 +383,12 @@ def fetch_page_qids(title: str, user_agent: str) -> set[str]:
         "explaintext": "1",
     }
 
-    data = _get(action="query", params=params, user_agent=user_agent)
+    data = _get(
+        action="query",
+        params=params,
+        user_agent=user_agent,
+        deadline=deadline,
+    )
 
     pages = data["query"]["pages"]
     assert len(pages) == 1, "Expected one page"

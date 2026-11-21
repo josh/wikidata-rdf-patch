@@ -125,7 +125,7 @@ def _blocklist_title(value: str) -> str:
     "--deadline",
     type=float,
     default=float("inf"),
-    help="Stop cleanly after retrying replication lag for this many seconds",
+    help="Stop cleanly after this many seconds",
 )
 @click.option("--verbose", "-v", is_flag=True)
 @click.version_option()
@@ -162,52 +162,86 @@ def main(
             logger.warning("Stopping before login: %s", e)
             return
 
-    blocked_qids: set[str] = set()
-    if blocklist_title:
-        blocked_qids = mediawiki_api.fetch_page_qids(
-            title=blocklist_title,
-            user_agent=user_agent,
+    try:
+        blocked_qids: set[str] = set()
+        if blocklist_title:
+            blocked_qids = mediawiki_api.fetch_page_qids(
+                title=blocklist_title,
+                user_agent=user_agent,
+                deadline=deadline,
+            )
+            logger.info("Loaded %i QIDs from blocklist", len(blocked_qids))
+
+        edits = list(
+            process_graph(
+                input=input,
+                blocked_qids=blocked_qids,
+                user_agent=user_agent,
+                deadline=deadline,
+            )
         )
-        logger.info("Loaded %i QIDs from blocklist", len(blocked_qids))
+    except mediawiki_api.RetriesExhaustedError as e:
+        logger.warning("Stopping before edits: %s", e)
+        return
 
-    edits = process_graph(input=input, blocked_qids=blocked_qids, user_agent=user_agent)
-
+    total = sum(len(claims) for _, _, claims, _ in edits)
+    published = 0
+    errored = 0
     last_edit: float = 0.0
-    pbar = tqdm(list(edits), unit="item")
+    pbar = tqdm(edits, unit="item")
 
-    with logging_redirect_tqdm():
-        for qid, lastrevid, claims, summary in pbar:
-            if summary:
-                logger.info(f"Edit {qid}: {summary}")
-            else:
-                logger.info(f"Edit {qid}")
-            for statement in claims:
-                statement_id = statement["mainsnak"]["property"]
-                statement_snak = statement.get("id", "(new claim)")
-                logger.info(f" ⮑ {statement_id} / {statement_snak}")
+    try:
+        with logging_redirect_tqdm():
+            for qid, lastrevid, claims, summary in pbar:
+                if summary:
+                    logger.info(f"Edit {qid}: {summary}")
+                else:
+                    logger.info(f"Edit {qid}")
+                for statement in claims:
+                    statement_id = statement["mainsnak"]["property"]
+                    statement_snak = statement.get("id", "(new claim)")
+                    logger.info(f" ⮑ {statement_id} / {statement_snak}")
 
-            if dry_run:
-                continue
+                if dry_run:
+                    continue
 
-            assert session is not None
-            wait_time = max(0, min_time_between_edits - (time.time() - last_edit))
-            if wait_time > 0:
-                logger.debug("Waiting for %.1f seconds", wait_time)
-                time.sleep(wait_time)
+                assert session is not None
+                if time.monotonic() >= deadline:
+                    logger.warning(
+                        "Stopping at %i/%i edits: deadline reached",
+                        pbar.n,
+                        pbar.total,
+                    )
+                    break
+                wait_time = max(0, min_time_between_edits - (time.time() - last_edit))
+                if wait_time > 0:
+                    logger.debug("Waiting for %.1f seconds", wait_time)
+                    time.sleep(wait_time)
 
-            try:
-                mediawiki_api.wbeditentity(
-                    session=session,
-                    qid=qid,
-                    baserevid=lastrevid,
-                    edit_data={"claims": claims},
-                    summary=summary,
-                    deadline=deadline,
-                )
-            except mediawiki_api.RetriesExhaustedError as e:
-                logger.warning("Stopping at %i/%i edits: %s", pbar.n, pbar.total, e)
-                return
-            last_edit = time.time()
+                try:
+                    mediawiki_api.wbeditentity(
+                        session=session,
+                        qid=qid,
+                        baserevid=lastrevid,
+                        edit_data={"claims": claims},
+                        summary=summary,
+                        deadline=deadline,
+                    )
+                except mediawiki_api.RetriesExhaustedError as e:
+                    logger.warning("Stopping at %i/%i edits: %s", pbar.n, pbar.total, e)
+                    break
+                except Exception:
+                    errored += len(claims)
+                    raise
+                published += len(claims)
+                last_edit = time.time()
 
-        if session is not None:
-            mediawiki_api.logout(session)
+            if session is not None:
+                mediawiki_api.logout(session)
+    finally:
+        logger.info(
+            "Finished with %i statements published, %i errored, %i skipped",
+            published,
+            errored,
+            total - published - errored,
+        )
