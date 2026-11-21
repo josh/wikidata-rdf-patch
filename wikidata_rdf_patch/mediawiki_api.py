@@ -247,7 +247,6 @@ def logout(session: Session) -> None:
         params=params,
         cookies=session.cookies,
         user_agent=session.user_agent,
-        maxlag=session.maxlag,
     )
 
 
