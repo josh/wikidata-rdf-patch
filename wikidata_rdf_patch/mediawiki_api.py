@@ -132,6 +132,26 @@ def _request(
     return api_data
 
 
+def _get(action: str, params: dict[str, str], user_agent: str) -> dict[str, Any]:
+    retries = DEFAULT_RETRIES
+    retry_after = DEFAULT_RETRY_AFTER
+    while True:
+        try:
+            retries -= 1
+            return _request(
+                method="GET",
+                action=action,
+                params=params,
+                cookies=http.cookiejar.CookieJar(),
+                user_agent=user_agent,
+            )
+        except urllib.error.HTTPError as e:
+            if retries > 0 and _sleep_for_retry(e, retry_after, float("inf")):
+                retry_after *= 2
+                continue
+            raise
+
+
 # https://www.wikidata.org/w/api.php?action=help&modules=query%2Btokens
 def _token(
     type: Literal["login", "csrf"],
@@ -256,11 +276,9 @@ def wbgetentities(
 ) -> dict[str, Entity]:
     assert len(ids) > 0, "must specify at least one ID"
     assert len(ids) <= 50, "must specify at most 50 IDs"
-    resp = _request(
-        method="GET",
+    resp = _get(
         action="wbgetentities",
         params={"ids": "|".join(ids)},
-        cookies=http.cookiejar.CookieJar(),
         user_agent=user_agent,
     )
     assert resp.get("success") == 1, "wbgetentities failed"
@@ -346,13 +364,7 @@ def fetch_page_qids(title: str, user_agent: str) -> set[str]:
         "explaintext": "1",
     }
 
-    data = _request(
-        method="GET",
-        action="query",
-        params=params,
-        cookies=http.cookiejar.CookieJar(),
-        user_agent=user_agent,
-    )
+    data = _get(action="query", params=params, user_agent=user_agent)
 
     pages = data["query"]["pages"]
     assert len(pages) == 1, "Expected one page"
