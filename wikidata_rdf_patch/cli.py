@@ -1,14 +1,15 @@
+import json
 import logging
 import re
 import time
 import urllib.parse
-from typing import TextIO
+from typing import Any, TextIO
 
 import click
 from tqdm import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
-from wikidata_rdf_patch import actions_logging, mediawiki_api
+from wikidata_rdf_patch import actions_logging, mediawiki_api, wikidata_typing
 
 from .rdf_patch import process_graph
 
@@ -75,6 +76,63 @@ def _blocklist_title(value: str) -> str:
     return title
 
 
+def _log_edit(
+    qid: str, summary: str | None, claims: list[wikidata_typing.Statement]
+) -> None:
+    if summary:
+        logger.info(f"Edit {qid}: {summary}")
+    else:
+        logger.info(f"Edit {qid}")
+    for statement in claims:
+        statement_id = statement["mainsnak"]["property"]
+        statement_snak = statement.get("id", "(new claim)")
+        logger.info(f" ⮑ {statement_id} / {statement_snak}")
+
+
+def _edit_record(
+    qid: str,
+    summary: str | None,
+    claims: list[wikidata_typing.Statement],
+    status: str,
+    request_id: str | None = None,
+) -> dict[str, Any]:
+    record: dict[str, Any] = {"type": "edit"}
+    if request_id is not None:
+        record["id"] = request_id
+    record["qid"] = qid
+    record["summary"] = summary
+    record["status"] = status
+    record["statements"] = [
+        {"property": statement["mainsnak"]["property"], "guid": statement.get("id")}
+        for statement in claims
+    ]
+    return record
+
+
+def _result_record(
+    status: str,
+    published: int = 0,
+    errored: int = 0,
+    skipped: int = 0,
+    reason: str | None = None,
+    request_id: str | None = None,
+) -> dict[str, Any]:
+    record: dict[str, Any] = {"type": "result"}
+    if request_id is not None:
+        record["id"] = request_id
+    record["status"] = status
+    record["published"] = published
+    record["errored"] = errored
+    record["skipped"] = skipped
+    if reason is not None:
+        record["reason"] = reason
+    return record
+
+
+def _write(record: dict[str, Any]) -> None:
+    click.echo(json.dumps(record))
+
+
 @click.command()
 @click.option("-n", "--dry-run", is_flag=True, help="Do not make any changes")
 @click.option(
@@ -127,6 +185,12 @@ def _blocklist_title(value: str) -> str:
     default=float("inf"),
     help="Stop cleanly after this many seconds",
 )
+@click.option(
+    "--output-format",
+    type=click.Choice(["text", "json"]),
+    default="text",
+    help="Log plain text to stderr, or write JSON Lines records to stdout",
+)
 @click.option("--verbose", "-v", is_flag=True)
 @click.version_option()
 def main(
@@ -139,6 +203,7 @@ def main(
     min_time_between_edits: int,
     maxlag: int,
     deadline: float,
+    output_format: str,
     verbose: bool,
 ) -> None:
     log_level = logging.DEBUG if verbose else logging.INFO
@@ -146,6 +211,7 @@ def main(
     logging.getLogger().setLevel(log_level)
 
     blocklist_title = _blocklist_title(blocklist_url)
+    json_output = output_format == "json"
     deadline += time.monotonic()
 
     session: mediawiki_api.Session | None = None
@@ -160,6 +226,8 @@ def main(
             )
         except mediawiki_api.RetriesExhaustedError as e:
             logger.warning("Stopping before login: %s", e)
+            if json_output:
+                _write(_result_record("stopped", reason=str(e)))
             return
 
     try:
@@ -182,36 +250,41 @@ def main(
         )
     except mediawiki_api.RetriesExhaustedError as e:
         logger.warning("Stopping before edits: %s", e)
+        if json_output:
+            _write(_result_record("stopped", reason=str(e)))
         return
+    except Exception as e:
+        if json_output:
+            _write(_result_record("error", reason=str(e)))
+        raise
 
     total = sum(len(claims) for _, _, claims, _ in edits)
     published = 0
     errored = 0
+    status = "done"
+    reason: str | None = None
     last_edit: float = 0.0
-    pbar = tqdm(edits, unit="item")
+    pbar = tqdm(edits, unit="item", disable=json_output)
 
     try:
         with logging_redirect_tqdm():
-            for qid, lastrevid, claims, summary in pbar:
-                if summary:
-                    logger.info(f"Edit {qid}: {summary}")
-                else:
-                    logger.info(f"Edit {qid}")
-                for statement in claims:
-                    statement_id = statement["mainsnak"]["property"]
-                    statement_snak = statement.get("id", "(new claim)")
-                    logger.info(f" ⮑ {statement_id} / {statement_snak}")
+            for index, (qid, lastrevid, claims, summary) in enumerate(pbar):
+                if not json_output:
+                    _log_edit(qid, summary, claims)
 
                 if dry_run:
+                    if json_output:
+                        _write(_edit_record(qid, summary, claims, "skipped"))
                     continue
 
                 assert session is not None
                 if time.monotonic() >= deadline:
                     logger.warning(
                         "Stopping at %i/%i edits: deadline reached",
-                        pbar.n,
-                        pbar.total,
+                        index,
+                        len(edits),
                     )
+                    status, reason = "stopped", "deadline reached"
                     break
                 wait_time = max(0, min_time_between_edits - (time.time() - last_edit))
                 if wait_time > 0:
@@ -228,20 +301,32 @@ def main(
                         deadline=deadline,
                     )
                 except mediawiki_api.RetriesExhaustedError as e:
-                    logger.warning("Stopping at %i/%i edits: %s", pbar.n, pbar.total, e)
+                    logger.warning("Stopping at %i/%i edits: %s", index, len(edits), e)
+                    status, reason = "stopped", str(e)
                     break
                 except Exception:
                     errored += len(claims)
+                    if json_output:
+                        _write(_edit_record(qid, summary, claims, "errored"))
                     raise
                 published += len(claims)
                 last_edit = time.time()
+                if json_output:
+                    _write(_edit_record(qid, summary, claims, "published"))
 
             if session is not None:
                 mediawiki_api.logout(session)
+    except Exception as e:
+        status, reason = "error", str(e)
+        raise
     finally:
-        logger.info(
-            "Finished with %i statements published, %i errored, %i skipped",
-            published,
-            errored,
-            total - published - errored,
-        )
+        skipped = total - published - errored
+        if json_output:
+            _write(_result_record(status, published, errored, skipped, reason))
+        else:
+            logger.info(
+                "Finished with %i statements published, %i errored, %i skipped",
+                published,
+                errored,
+                skipped,
+            )
