@@ -142,3 +142,111 @@ def test_json_reports_error_result_and_fails() -> None:
     assert records[0]["type"] == "result"
     assert records[0]["status"] == "error"
     assert records[0]["reason"]
+
+
+def _requests(*requests: tuple[str, str]) -> str:
+    return "".join(
+        json.dumps({"id": request_id, "turtle": turtle}) + "\n"
+        for request_id, turtle in requests
+    )
+
+
+def test_stream_json_dry_run_answers_each_request_in_order() -> None:
+    result = CliRunner().invoke(
+        main,
+        ["--stream", "--dry-run", "--output-format", "json"],
+        input=_requests(
+            ("first", 'wd:Q42 wdt:P370 "Stream preview for Q42".'),
+            (
+                "second",
+                'wd:Q115569934 wdt:P370 "Stream preview"; wdt:P2536 "stream".',
+            ),
+        ),
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    records = [json.loads(line) for line in result.stdout.splitlines()]
+    assert [(record["type"], record["id"]) for record in records] == [
+        ("edit", "first"),
+        ("result", "first"),
+        ("edit", "second"),
+        ("result", "second"),
+    ]
+    assert records[0]["qid"] == "Q42"
+    assert records[0]["status"] == "skipped"
+    assert records[1] == {
+        "type": "result",
+        "id": "first",
+        "status": "done",
+        "published": 0,
+        "errored": 0,
+        "skipped": 1,
+    }
+    assert records[2]["qid"] == "Q115569934"
+    assert records[3]["status"] == "done"
+    assert records[3]["skipped"] == 2
+
+
+def test_stream_reports_a_failed_request_and_continues() -> None:
+    missing = """
+        wds:Q42-00000000-0000-0000-0000-000000000000
+            wikibase:rank wikibase:DeprecatedRank.
+    """
+    result = CliRunner().invoke(
+        main,
+        ["--stream", "--dry-run", "--output-format", "json"],
+        input=_requests(
+            ("missing", missing),
+            ("valid", 'wd:Q42 wdt:P370 "Stream preview for Q42".'),
+        ),
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    results = [
+        record
+        for record in map(json.loads, result.stdout.splitlines())
+        if record["type"] == "result"
+    ]
+    assert [(record["id"], record["status"]) for record in results] == [
+        ("missing", "error"),
+        ("valid", "done"),
+    ]
+    assert results[0]["reason"]
+    assert results[1]["skipped"] == 1
+
+
+def test_stream_rejects_a_malformed_request() -> None:
+    result = CliRunner().invoke(
+        main,
+        ["--stream", "--dry-run", "--output-format", "json"],
+        input="wd:Q42 wdt:P31 wd:Q5.\n",
+    )
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "line 1: invalid JSON" in result.stderr
+
+
+def test_stream_text_dry_run_logs_edits_and_writes_nothing(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    root_logger = logging.getLogger()
+    original_level = root_logger.level
+    try:
+        root_logger.setLevel(logging.WARNING)
+        result = CliRunner().invoke(
+            main,
+            ["--stream", "--dry-run"],
+            input=_requests(("first", 'wd:Q42 wdt:P370 "Stream preview for Q42".')),
+            catch_exceptions=False,
+        )
+    finally:
+        root_logger.setLevel(original_level)
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == ""
+    messages = [record.getMessage() for record in caplog.records]
+    assert "Edit Q42" in messages
+    assert "Finished with 0 statements published, 0 errored, 1 skipped" in messages

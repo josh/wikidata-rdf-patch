@@ -1,3 +1,4 @@
+import io
 import json
 import logging
 import re
@@ -11,7 +12,7 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 
 from wikidata_rdf_patch import actions_logging, mediawiki_api, wikidata_typing
 
-from .rdf_patch import process_graph
+from .rdf_patch import PropertyDatatypes, process_graph
 
 actions_logging.setup()
 logger = logging.getLogger("wikidata-rdf-patch")
@@ -133,6 +134,117 @@ def _write(record: dict[str, Any]) -> None:
     click.echo(json.dumps(record))
 
 
+def _stream_request(line: str, number: int) -> tuple[str, str]:
+    try:
+        request = json.loads(line)
+    except json.JSONDecodeError as error:
+        raise click.ClickException(f"line {number}: invalid JSON") from error
+    if (
+        not isinstance(request, dict)
+        or not isinstance(request.get("id"), str)
+        or not isinstance(request.get("turtle"), str)
+    ):
+        raise click.ClickException(
+            f"line {number}: expected an object with string id and turtle"
+        )
+    return request["id"], request["turtle"]
+
+
+def _stream(
+    input: TextIO,
+    session: mediawiki_api.Session | None,
+    json_output: bool,
+    blocked_qids: set[str],
+    user_agent: str,
+    min_time_between_edits: int,
+    seconds: float,
+) -> None:
+    property_datatypes: PropertyDatatypes = {}
+    published = 0
+    errored = 0
+    skipped = 0
+    last_edit: float = 0.0
+
+    try:
+        for number, line in enumerate(input, start=1):
+            if not line.strip():
+                continue
+            request_id, turtle = _stream_request(line, number)
+            result = _result_record("done", request_id=request_id)
+            deadline = time.monotonic() + seconds
+            current: tuple[str, str | None, list[wikidata_typing.Statement]] | None
+            current = None
+
+            try:
+                edits = process_graph(
+                    input=io.StringIO(turtle),
+                    blocked_qids=blocked_qids,
+                    user_agent=user_agent,
+                    deadline=deadline,
+                    property_datatypes=property_datatypes,
+                )
+                for qid, lastrevid, claims, summary in edits:
+                    current = (qid, summary, claims)
+                    if not json_output:
+                        _log_edit(qid, summary, claims)
+
+                    if session is None:
+                        result["skipped"] += len(claims)
+                        status = "skipped"
+                    else:
+                        wait_time = max(
+                            0, min_time_between_edits - (time.time() - last_edit)
+                        )
+                        if wait_time > 0:
+                            logger.debug("Waiting for %.1f seconds", wait_time)
+                            time.sleep(wait_time)
+                        mediawiki_api.wbeditentity(
+                            session=session,
+                            qid=qid,
+                            baserevid=lastrevid,
+                            edit_data={"claims": claims},
+                            summary=summary,
+                            deadline=deadline,
+                        )
+                        last_edit = time.time()
+                        result["published"] += len(claims)
+                        status = "published"
+
+                    if json_output:
+                        _write(_edit_record(qid, summary, claims, status, request_id))
+                    current = None
+            except mediawiki_api.RetriesExhaustedError as e:
+                logger.warning("Stopping at %s: %s", request_id, e)
+                result["status"] = "stopped"
+                result["reason"] = str(e)
+            except Exception as e:
+                logger.exception("%s failed", request_id)
+                result["status"] = "error"
+                result["reason"] = str(e)
+                if current is not None:
+                    result["errored"] = len(current[2])
+                    if json_output:
+                        _write(_edit_record(*current, "errored", request_id))
+
+            published += result["published"]
+            errored += result["errored"]
+            skipped += result["skipped"]
+            if json_output:
+                _write(result)
+            if result["status"] == "stopped":
+                break
+    finally:
+        if session is not None:
+            mediawiki_api.logout(session)
+        if not json_output:
+            logger.info(
+                "Finished with %i statements published, %i errored, %i skipped",
+                published,
+                errored,
+                skipped,
+            )
+
+
 @click.command()
 @click.option("-n", "--dry-run", is_flag=True, help="Do not make any changes")
 @click.option(
@@ -183,7 +295,12 @@ def _write(record: dict[str, Any]) -> None:
     "--deadline",
     type=float,
     default=float("inf"),
-    help="Stop cleanly after this many seconds",
+    help="Stop cleanly after this many seconds, per request with --stream",
+)
+@click.option(
+    "--stream",
+    is_flag=True,
+    help="Read one JSON request per input line and apply each before the next",
 )
 @click.option(
     "--output-format",
@@ -203,6 +320,7 @@ def main(
     min_time_between_edits: int,
     maxlag: int,
     deadline: float,
+    stream: bool,
     output_format: str,
     verbose: bool,
 ) -> None:
@@ -212,6 +330,7 @@ def main(
 
     blocklist_title = _blocklist_title(blocklist_url)
     json_output = output_format == "json"
+    seconds = deadline
     deadline += time.monotonic()
 
     session: mediawiki_api.Session | None = None
@@ -240,12 +359,16 @@ def main(
             )
             logger.info("Loaded %i QIDs from blocklist", len(blocked_qids))
 
-        edits = list(
-            process_graph(
-                input=input,
-                blocked_qids=blocked_qids,
-                user_agent=user_agent,
-                deadline=deadline,
+        edits = (
+            []
+            if stream
+            else list(
+                process_graph(
+                    input=input,
+                    blocked_qids=blocked_qids,
+                    user_agent=user_agent,
+                    deadline=deadline,
+                )
             )
         )
     except mediawiki_api.RetriesExhaustedError as e:
@@ -257,6 +380,18 @@ def main(
         if json_output:
             _write(_result_record("error", reason=str(e)))
         raise
+
+    if stream:
+        _stream(
+            input=input,
+            session=session,
+            json_output=json_output,
+            blocked_qids=blocked_qids,
+            user_agent=user_agent,
+            min_time_between_edits=min_time_between_edits,
+            seconds=seconds,
+        )
+        return
 
     total = sum(len(claims) for _, _, claims, _ in edits)
     published = 0
