@@ -804,8 +804,13 @@ def _prefetch_items(
 
 
 def _prefetch_property_datatypes(
-    graph: Graph, user_agent: str, deadline: float = float("inf")
+    graph: Graph,
+    user_agent: str,
+    deadline: float = float("inf"),
+    datatypes: PropertyDatatypes | None = None,
 ) -> PropertyDatatypes:
+    if datatypes is None:
+        datatypes = {}
     pids: set[str] = set()
     property_prefixes = {
         "p",
@@ -822,14 +827,17 @@ def _prefetch_property_datatypes(
 
     for uri in graph_urirefs(graph):
         prefix, local_name = _compute_qname(uri)
-        if prefix in property_prefixes and re.match(r"^P\d+$", local_name):
+        if (
+            prefix in property_prefixes
+            and re.match(r"^P\d+$", local_name)
+            and local_name not in datatypes
+        ):
             pids.add(local_name)
 
     if len(pids) == 0:
         logger.debug("No properties prefetched")
-        return {}
+        return datatypes
 
-    datatypes: PropertyDatatypes = {}
     for pid_batch in itertools.batched(sorted(pids), n=50):
         entities = mediawiki_api.wbgetentities(
             ids=list(pid_batch),
@@ -839,7 +847,7 @@ def _prefetch_property_datatypes(
         for pid, entity in entities.items():
             assert entity["type"] == "property"
             datatypes[pid] = entity["datatype"]
-    logger.debug("Prefetched %d property datatypes", len(datatypes))
+    logger.debug("Prefetched %d property datatypes", len(pids))
     return datatypes
 
 
@@ -975,6 +983,7 @@ def process_graph(
     blocked_qids: set[str] | None = None,
     user_agent: str = mediawiki_api.DEFAULT_USER_AGENT,
     deadline: float = float("inf"),
+    property_datatypes: PropertyDatatypes | None = None,
 ) -> Iterator[tuple[str, int, list[wikidata_typing.Statement], str | None]]:
     if blocked_qids is None:
         blocked_qids = set()
@@ -983,7 +992,9 @@ def process_graph(
     data = PREFIXES + input.read()
     graph.parse(data=data)
 
-    property_datatypes = _prefetch_property_datatypes(graph, user_agent, deadline)
+    property_datatypes = _prefetch_property_datatypes(
+        graph, user_agent, deadline, property_datatypes
+    )
     items, missing_items = _prefetch_items(graph, user_agent, deadline)
     original_items = deepcopy(items)
 

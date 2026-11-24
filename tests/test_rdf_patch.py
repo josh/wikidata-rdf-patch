@@ -121,6 +121,27 @@ def test_prefetch_property_datatypes_batches_51_properties() -> None:
     assert datatypes.keys() == {f"P{number}" for number in property_numbers}
 
 
+def test_process_graph_shares_property_datatypes() -> None:
+    property_datatypes: PropertyDatatypes = {"P370": "external-id"}
+
+    list(
+        process_graph(
+            StringIO('wd:Q115569934 wdt:P370 "Hello world!".'),
+            property_datatypes=property_datatypes,
+        )
+    )
+    assert property_datatypes == {"P370": "external-id"}
+
+    list(
+        process_graph(
+            StringIO('wd:Q115569934 wdt:P370 "Hello"; wdt:P2536 "x".'),
+            property_datatypes=property_datatypes,
+        )
+    )
+    assert property_datatypes["P370"] == "external-id"
+    assert property_datatypes.keys() == {"P370", "P2536"}
+
+
 def test_resolve_unitless_quantity_value() -> None:
     graph = Graph()
     quantity = BNode()
