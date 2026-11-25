@@ -924,6 +924,26 @@ def _update_statement(
         edit_summaries.add(edit_summary_literal.toPython())
 
 
+def _statement_exists(
+    statements: Iterable[wikidata_typing.Statement],
+    statement: wikidata_typing.Statement,
+) -> bool:
+    qualifiers = statement.get("qualifiers", {})
+    for existing in statements:
+        existing_qualifiers = existing.get("qualifiers", {})
+        if (
+            existing["rank"] == statement["rank"]
+            and _snak_equals(existing["mainsnak"], statement["mainsnak"])
+            and existing_qualifiers.keys() == qualifiers.keys()
+            and all(
+                _snaks_equals(existing_qualifiers[pid], qualifiers[pid])
+                for pid in qualifiers
+            )
+        ):
+            return True
+    return False
+
+
 def _update_item(
     graph: Graph,
     property_datatypes: PropertyDatatypes,
@@ -973,7 +993,11 @@ def _update_item(
                 pid=pid,
                 subject=object,
             )
-            _item_property_claims(item, pid).append(statement)
+            claims = _item_property_claims(item, pid)
+            if _statement_exists(claims, statement):
+                logger.info("statement for %s/%s already exists", qid, pid)
+                continue
+            claims.append(statement)
             if edit_summary:
                 edit_summaries.add(edit_summary)
 

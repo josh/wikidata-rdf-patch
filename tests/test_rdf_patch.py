@@ -725,7 +725,7 @@ def test_item_wdt_update_deprecated() -> None:
 
 def test_item_ps_add_string() -> None:
     triples = """
-        wd:Q115569934 p:P370 [ ps:P370 "Hello world!" ].
+        wd:Q115569934 p:P370 [ ps:P370 "Hello again!" ].
     """
     edits = list(process_graph(StringIO(triples)))
     assert len(edits) == 1
@@ -739,7 +739,95 @@ def test_item_ps_add_string() -> None:
     assert claim["mainsnak"]["snaktype"] == "value"
     assert claim["mainsnak"]["property"] == "P370"
     assert claim["mainsnak"]["datavalue"]["type"] == "string"
-    assert claim["mainsnak"]["datavalue"]["value"] == "Hello world!"
+    assert claim["mainsnak"]["datavalue"]["value"] == "Hello again!"
+
+
+def test_item_ps_noop_string() -> None:
+    triples = """
+        wd:Q115569934 p:P370 [
+          ps:P370 "Hello world!";
+          wikidatabots:editSummary "Added string"
+        ].
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 0
+
+
+def test_item_ps_pq_noop_ignores_references() -> None:
+    triples = """
+        wd:Q42 p:P26 [
+          ps:P26 wd:Q14623681;
+          pqe:P580 "1991-11-25T00:00:00Z"^^xsd:dateTime;
+          pqe:P582 "2001-05-11T00:00:00Z"^^xsd:dateTime;
+          pqe:P1534 wd:Q99521170;
+          prov:wasOnlyDerivedFrom [ pr:P854 <http://example.org/> ]
+        ].
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 0
+
+
+def test_item_ps_pq_add_with_fewer_qualifiers() -> None:
+    triples = """
+        wd:Q42 p:P26 [
+          ps:P26 wd:Q14623681;
+          pq:P580 "1991-11-25T00:00:00Z"^^xsd:dateTime;
+          pq:P582 "2001-05-11T00:00:00Z"^^xsd:dateTime
+        ].
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 1
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q42"
+    assert len(claims) == 1
+    assert claims[0]["id"] != "q42$b88670f8-456b-3ecb-cf3d-2bca2cf7371e"
+
+
+def test_item_ps_pq_add_with_more_qualifiers() -> None:
+    triples = """
+        wd:Q42 p:P26 [
+          ps:P26 wd:Q14623681;
+          pq:P580 "1991-11-25T00:00:00Z"^^xsd:dateTime;
+          pq:P582 "2001-05-11T00:00:00Z"^^xsd:dateTime;
+          pq:P1534 wd:Q99521170;
+          pq:P2842 wd:Q84
+        ].
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 1
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q42"
+    assert len(claims) == 1
+    assert claims[0]["id"] != "q42$b88670f8-456b-3ecb-cf3d-2bca2cf7371e"
+
+
+def test_item_ps_add_when_only_deprecated_exists() -> None:
+    triples = """
+        wd:Q1292541 p:P4947 [ ps:P4947 "429486" ].
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 1
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q1292541"
+    assert len(claims) == 1
+    assert claims[0]["rank"] == "normal"
+
+
+def test_item_ps_pq_add_with_changed_qualifier() -> None:
+    triples = """
+        wd:Q42 p:P26 [
+          ps:P26 wd:Q14623681;
+          pq:P580 "1991-11-25T00:00:00Z"^^xsd:dateTime;
+          pq:P582 "2001-05-12T00:00:00Z"^^xsd:dateTime;
+          pq:P1534 wd:Q99521170
+        ].
+    """
+    edits = list(process_graph(StringIO(triples)))
+    assert len(edits) == 1
+    (qid, _, claims, _) = edits[0]
+    assert qid == "Q42"
+    assert len(claims) == 1
+    assert claims[0]["id"] != "q42$b88670f8-456b-3ecb-cf3d-2bca2cf7371e"
 
 
 def test_item_ps_add_preferred_string() -> None:
